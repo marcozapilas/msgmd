@@ -1,0 +1,38 @@
+{
+  "name": "msgmd",
+  "version": "1.0.0",
+  "description": "Convert Outlook .msg files into clean Markdown.",
+  "type": "module",
+  "bin": {
+    "msgmd": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "msgmd": "tsx src/index.ts",
+    "test": "node --import tsx --test src/markdown.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "keywords": [
+    "outlook",
+    "msg",
+    "markdown",
+    "email",
+    "converter"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@kenjiuno/msgreader": "^1.22.0",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/turndown": "^5.0.5",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
