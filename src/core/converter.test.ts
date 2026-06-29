@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMarkdown, htmlToMarkdown } from "./markdown.js";
-import type { ParsedEmail } from "./types.js";
+import { buildMarkdown, htmlToMarkdown } from "./converter.js";
+import type { ParsedEmail } from "./converter.js";
 
 test("buildMarkdown renders headings, metadata and a bulleted attachments list", () => {
   const email: ParsedEmail = {
@@ -16,22 +16,18 @@ test("buildMarkdown renders headings, metadata and a bulleted attachments list",
 
   const md = buildMarkdown(email);
 
-  // Headings and structure.
   assert.match(md, /^# Toplantı Notları/);
   assert.match(md, /## Details/);
   assert.match(md, /## Attachments/);
   assert.match(md, /## Body/);
 
-  // Metadata bullets.
   assert.match(md, /- \*\*From:\*\* Ayşe Yılmaz <ayse@example\.com>/);
   assert.match(md, /- \*\*Cc:\*\* cc@example\.com/);
   assert.match(md, /- \*\*Date:\*\* 2026-06-29T08:30:00\.000Z/);
 
-  // Attachments rendered as bullets.
   assert.match(md, /- rapor\.pdf/);
   assert.match(md, /- sunum\.pptx/);
 
-  // Turkish characters preserved in the body.
   assert.ok(md.includes("Görüşmek üzere."));
 });
 

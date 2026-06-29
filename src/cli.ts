@@ -2,13 +2,20 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import { buildMarkdown } from "./markdown.js";
-import { parseMsgFile } from "./parser.js";
-import type { ConversionResult } from "./types.js";
+import { buildMarkdown, parseMsgBytes } from "./core/converter.js";
+
+/** Outcome of processing one input file. */
+interface ConversionResult {
+  sourceFile: string;
+  outputFile?: string;
+  status: "converted" | "skipped";
+  error?: string;
+}
 
 const OUTPUT_DIR = "output";
 
@@ -31,7 +38,7 @@ function isMsg(filePath: string): boolean {
 /** Convert one .msg file and write its Markdown sibling into `outputDir`. */
 function convertOne(filePath: string, outputDir: string): ConversionResult {
   try {
-    const email = parseMsgFile(filePath);
+    const email = parseMsgBytes(new Uint8Array(readFileSync(filePath)));
     const markdown = buildMarkdown(email);
     const outputFile = uniquePath(
       join(outputDir, `${basename(filePath, extname(filePath))}.md`),
@@ -99,7 +106,6 @@ export function run(argv: string[]): number {
   printSummary(results, outputDir);
 
   const failures = results.filter((r) => r.status === "skipped").length;
-  // Success as long as at least one file converted.
   return failures === results.length ? 1 : 0;
 }
 

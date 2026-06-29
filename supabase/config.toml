@@ -1,0 +1,7 @@
+# Minimal Supabase project config. Replace project_id with your own ref when
+# linking (`supabase link --project-ref <ref>`).
+project_id = "msgmd"
+
+[functions.convert-msg]
+verify_jwt = true
+import_map = "./functions/import_map.json"

@@ -11,7 +11,7 @@
     "build": "tsc",
     "start": "tsx src/index.ts",
     "msgmd": "tsx src/index.ts",
-    "test": "node --import tsx --test src/markdown.test.ts",
+    "test": "node --import tsx --test src/core/converter.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
