@@ -13,6 +13,7 @@ interface Props {
   userId: string;
   onDone: () => void | Promise<void>;
   onToast: (kind: "ok" | "err" | "info", text: string) => void;
+  onConverted?: () => void;
 }
 
 type Status =
@@ -75,7 +76,7 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function Uploader({ userId, onDone, onToast }: Props) {
+export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
   const [items, setItemsState] = useState<Item[]>([]);
   const [dragging, setDragging] = useState(false);
   const [pageDrag, setPageDrag] = useState(false);
@@ -119,8 +120,9 @@ export function Uploader({ userId, onDone, onToast }: Props) {
       else if (ok > 0 && err > 0) onToast("info", `${ok} done, ${err} failed`);
       else if (err > 0) onToast("err", `${err} file(s) failed to convert`);
       batchTally.current = { ok: 0, err: 0, total: 0 };
+      if (ok > 0) onConverted?.();
     }
-  }, [onToast]);
+  }, [onToast, onConverted]);
 
   const runItem = useCallback(
     async (id: string, file: File, batchId: string) => {

@@ -943,9 +943,349 @@ input:focus {
 .center-load {
   display: grid;
   place-items: center;
-  min-height: 60vh;
+  min-height: 100vh;
   color: var(--muted);
   gap: 14px;
+}
+
+/* ------------------------------- Shell ---------------------------------- */
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+.rail {
+  width: 248px;
+  flex: none;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 16px;
+  border-right: 1px solid var(--line);
+  background: rgba(20, 16, 12, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px 18px;
+}
+.rail-brand .mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: var(--gold-grad);
+  color: #2a1c0c;
+  font-size: 18px;
+  box-shadow: 0 8px 20px -8px rgba(227, 181, 107, 0.6);
+}
+.rail-word {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 22px;
+}
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.rail-item:hover {
+  background: rgba(244, 236, 225, 0.05);
+  color: var(--text);
+}
+.rail-item.active {
+  background: rgba(227, 181, 107, 0.12);
+  color: var(--gold);
+}
+.rail-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(244, 236, 225, 0.08);
+  color: var(--muted);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+.rail-item.active .rail-badge {
+  background: rgba(227, 181, 107, 0.2);
+  color: var(--gold);
+}
+.rail-profile {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px;
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.rail-profile:hover {
+  border-color: var(--line-strong);
+  background: rgba(0, 0, 0, 0.3);
+}
+.rail-profile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rail-profile-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-profile-sub {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--gold-grad);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: #2a1c0c;
+  flex: none;
+}
+.avatar.lg {
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+.view {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: clamp(22px, 4vw, 46px);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.view-head {
+  margin-bottom: 2px;
+}
+.view-title {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(26px, 4vw, 34px);
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+.view-sub {
+  color: var(--muted);
+  font-size: 15px;
+  margin: 6px 0 0;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+/* ----------------------------- Stat cards ------------------------------- */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 15px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+.stat-ic {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(227, 181, 107, 0.12);
+  color: var(--gold);
+  flex: none;
+}
+.stat-num {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1;
+}
+.stat-lbl {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ----------------------------- Big search ------------------------------- */
+.search.big {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+}
+.search.big input {
+  width: 100%;
+  padding: 13px 14px 13px 44px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+.search.big > svg {
+  position: absolute;
+  left: 15px;
+}
+.search.big .icon-btn {
+  position: absolute;
+  right: 8px;
+}
+.export-btn {
+  margin-left: auto;
+}
+
+/* --------------------------- Search snippet ----------------------------- */
+.row-snippet {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 5px;
+  padding: 6px 9px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 8px;
+  border-left: 2px solid var(--gold-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+mark {
+  background: rgba(227, 181, 107, 0.34);
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* ----------------------------- Profile ---------------------------------- */
+.profile-modal {
+  max-width: 460px;
+}
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.profile-email {
+  font-weight: 600;
+  font-size: 15px;
+}
+.profile-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.pstat {
+  padding: 16px;
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.pstat-n {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 28px;
+  color: var(--gold);
+  line-height: 1;
+}
+.pstat-l {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.profile-field {
+  margin-bottom: 22px;
+}
+.profile-field input {
+  margin-top: 2px;
+}
+.profile-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    flex-direction: column;
+  }
+  .rail {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+  }
+  .rail-brand {
+    padding: 0 6px 0 4px;
+  }
+  .rail-word {
+    display: none;
+  }
+  .rail-nav {
+    flex-direction: row;
+    flex: 1;
+  }
+  .rail-item span:not(.rail-badge) {
+    display: none;
+  }
+  .rail-item {
+    justify-content: center;
+    padding: 9px 14px;
+  }
+  .rail-profile {
+    margin-top: 0;
+    padding: 6px;
+  }
+  .rail-profile-text {
+    display: none;
+  }
+  .stat-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ----------------------------- Filters ---------------------------------- */
