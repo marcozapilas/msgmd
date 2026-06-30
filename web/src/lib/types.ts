@@ -2,6 +2,7 @@
 export interface Conversion {
   id: string;
   user_id: string;
+  batch_id: string | null;
   source_name: string;
   storage_path: string;
   output_path: string | null;

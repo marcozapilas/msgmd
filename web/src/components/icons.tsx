@@ -122,6 +122,29 @@ export const IconLogout = ({ size }: P) => (
   </svg>
 );
 
+export const IconChevron = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);
+
+export const IconLayers = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+    <path d="m3 12 9 5 9-5" />
+    <path d="m3 17 9 5 9-5" />
+  </svg>
+);
+
+export const IconMerge = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M8 6V3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3" />
+    <path d="M12 6v8" />
+    <path d="m8 11 4 4 4-4" />
+    <rect x="4" y="18" width="16" height="4" rx="1" />
+  </svg>
+);
+
 export const IconInbox = ({ size }: P) => (
   <svg {...base(size)}>
     <path d="M22 12h-6l-2 3h-4l-2-3H2" />
