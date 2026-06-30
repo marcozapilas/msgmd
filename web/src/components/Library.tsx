@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import JSZip from "jszip";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
 import { supabase } from "../lib/supabase.ts";
 import type { Conversion } from "../lib/types.ts";
 import {
@@ -81,8 +78,14 @@ function saveBlob(filename: string, blob: Blob) {
 function downloadText(filename: string, content: string) {
   saveBlob(filename, new Blob([content], { type: "text/markdown;charset=utf-8" }));
 }
-function renderMarkdown(md: string): string {
-  return DOMPurify.sanitize(marked.parse(md, { async: false }) as string);
+
+// Render markdown safely, loading marked + DOMPurify only when first needed.
+async function renderMarkdown(md: string): Promise<string> {
+  const [{ marked }, DOMPurify] = await Promise.all([
+    import("marked"),
+    import("dompurify"),
+  ]);
+  return DOMPurify.default.sanitize(marked.parse(md, { async: false }) as string);
 }
 
 /** Fetch the markdown column for a set of ids, chunked to keep URLs short. */
@@ -104,6 +107,7 @@ async function zipItems(
   items: { source_name: string; markdown: string }[],
   filename: string,
 ) {
+  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   const used = new Map<string, number>();
   for (const it of items) {
@@ -158,6 +162,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
   const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<Conversion | null>(null);
   const [previewMd, setPreviewMd] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [rendered, setRendered] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [paging, setPaging] = useState<
@@ -227,6 +232,22 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [preview]);
+
+  // Render preview HTML lazily (loads marked/DOMPurify on first use).
+  useEffect(() => {
+    if (!preview || !rendered || previewMd == null) {
+      setPreviewHtml(null);
+      return;
+    }
+    let cancelled = false;
+    setPreviewHtml(null);
+    void renderMarkdown(previewMd).then((html) => {
+      if (!cancelled) setPreviewHtml(html);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, rendered, previewMd]);
 
   const stats = useMemo(() => {
     const weekAgo = Date.now() - 7 * 864e5;
@@ -781,7 +802,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                 </div>
               </div>
               <div className="modal-body">
-                {previewMd == null ? (
+                {previewMd == null || (rendered && previewHtml == null) ? (
                   <div className="modal-loading">
                     <IconSpinner size={22} />
                     <span>Loading…</span>
@@ -789,9 +810,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                 ) : rendered ? (
                   <div
                     className="md-rendered"
-                    dangerouslySetInnerHTML={{
-                      __html: renderMarkdown(previewMd),
-                    }}
+                    dangerouslySetInnerHTML={{ __html: previewHtml ?? "" }}
                   />
                 ) : (
                   <pre className="preview">{previewMd}</pre>

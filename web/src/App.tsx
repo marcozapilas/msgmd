@@ -48,9 +48,11 @@ export function App() {
         .range(from, from + PAGE - 1);
       if (error || !data) break;
       all.push(...(data as Conversion[]));
+      // Progressive render: show each page as it arrives so the first 1000 rows
+      // appear almost immediately instead of waiting for the whole library.
+      setConversions([...all]);
       if (data.length < PAGE) break;
     }
-    setConversions(all);
   }, []);
 
   useEffect(() => {
