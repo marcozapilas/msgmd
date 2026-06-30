@@ -1071,8 +1071,51 @@ input:focus {
   gap: 3px;
   flex: none;
 }
-.batch .rows {
-  padding: 4px 12px 12px;
+.batch-body {
+  padding: 0 12px 12px;
+}
+.batch-body .rows {
+  margin-top: 4px;
+}
+.pager-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px 4px;
+  flex-wrap: wrap;
+}
+.pager-size {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.pager-size select {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  color: var(--text);
+  cursor: pointer;
+}
+.pager-size select:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+.pager-info {
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.pager-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 0 2px;
 }
 
 /* --------------------------- Raw/Rendered toggle ------------------------ */

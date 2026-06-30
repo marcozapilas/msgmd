@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONVERT_FUNCTION, MSG_BUCKET, supabase } from "../lib/supabase.ts";
+import { supabase } from "../lib/supabase.ts";
 import {
   IconAlert,
   IconCheck,
@@ -36,10 +36,15 @@ const MAX_ATTEMPTS = 4;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Run a Supabase call that resolves to `{ error }`, retrying transient failures
- * with exponential backoff so a brief disconnect mid-batch doesn't kill a file.
- */
+// Lazy-load the (heavy) converter only when the first file is processed.
+type Converter = typeof import("../lib/converter.ts");
+let converterPromise: Promise<Converter> | null = null;
+function loadConverter(): Promise<Converter> {
+  converterPromise ??= import("../lib/converter.ts");
+  return converterPromise;
+}
+
+/** Run a Supabase call that resolves to `{ error }`, retrying with backoff. */
 async function runStep(
   fn: () => Promise<{ error: unknown }>,
   isCancelled: () => boolean,
@@ -57,8 +62,8 @@ async function runStep(
 
 const STAGE_LABEL: Record<Status, string> = {
   queued: "Queued",
-  uploading: "Uploading",
-  converting: "Converting",
+  uploading: "Reading",
+  converting: "Saving",
   done: "Done",
   error: "Error",
   cancelled: "Cancelled",
@@ -120,45 +125,45 @@ export function Uploader({ userId, onDone, onToast }: Props) {
   const runItem = useCallback(
     async (id: string, file: File, batchId: string) => {
       const convId = crypto.randomUUID();
-      const path = `${userId}/${convId}.msg`;
       const isCancelled = () => cancelled.current.has(id);
       try {
-        // Each step is idempotent (upsert) so a retry after a dropped
-        // connection can't create duplicates.
-        await runStep(
-          () =>
-            supabase.storage.from(MSG_BUCKET).upload(path, file, {
-              contentType: "application/vnd.ms-outlook",
-              upsert: true,
-            }),
-          isCancelled,
-        );
+        if (isCancelled()) throw { cancelled: true };
 
-        await runStep(
-          async () =>
-            supabase
-              .from("conversions")
-              .upsert(
-                {
-                  id: convId,
-                  user_id: userId,
-                  batch_id: batchId,
-                  source_name: file.name,
-                  storage_path: path,
-                  size_bytes: file.size,
-                  status: "pending",
-                },
-                { onConflict: "id" },
-              ),
-          isCancelled,
-        );
+        // 1) Parse + render entirely in the browser.
+        const { convertMsgToMarkdown } = await loadConverter();
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let subject: string;
+        let markdown: string;
+        try {
+          const out = convertMsgToMarkdown(bytes);
+          subject = out.email.subject;
+          markdown = out.markdown;
+        } catch (e) {
+          throw new Error(
+            e instanceof Error ? e.message : "Could not read .msg file",
+          );
+        }
+
+        if (isCancelled()) throw { cancelled: true };
         patch(id, { status: "converting" });
 
+        // 2) Save the result (single, idempotent network call).
         await runStep(
-          () =>
-            supabase.functions.invoke(CONVERT_FUNCTION, {
-              body: { conversionId: convId },
-            }),
+          async () =>
+            supabase.from("conversions").upsert(
+              {
+                id: convId,
+                user_id: userId,
+                batch_id: batchId,
+                source_name: file.name,
+                storage_path: null,
+                size_bytes: file.size,
+                status: "done",
+                subject,
+                markdown,
+              },
+              { onConflict: "id" },
+            ),
           isCancelled,
         );
 
@@ -370,8 +375,7 @@ export function Uploader({ userId, onDone, onToast }: Props) {
           }}
         />
         <p className="dz-hint">
-          Select multiple files · 4 processed at a time · each upload is its own
-          batch
+          Converted privately in your browser · each upload is its own batch
         </p>
 
         {total > 0 && (

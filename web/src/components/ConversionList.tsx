@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import JSZip from "jszip";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import {
-  CONVERT_FUNCTION,
-  MD_BUCKET,
-  MSG_BUCKET,
-  supabase,
-} from "../lib/supabase.ts";
+import { MD_BUCKET, MSG_BUCKET, supabase } from "../lib/supabase.ts";
 import type { Conversion } from "../lib/types.ts";
 import {
   IconArchive,
@@ -117,8 +113,17 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
   const [preview, setPreview] = useState<Conversion | null>(null);
   const [rendered, setRendered] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [retrying, setRetrying] = useState<Set<string>>(new Set());
+  const [paging, setPaging] = useState<Record<string, { page: number; size: number }>>(
+    {},
+  );
   const [zipping, setZipping] = useState(false);
+
+  const PAGE_SIZES = [10, 25, 50];
+  const getPaging = (key: string) => paging[key] ?? { page: 1, size: 10 };
+  const setPageSize = (key: string, size: number) =>
+    setPaging((p) => ({ ...p, [key]: { page: 1, size } }));
+  const setPage = (key: string, page: number) =>
+    setPaging((p) => ({ ...p, [key]: { ...getPaging(key), page } }));
 
   useEffect(() => {
     if (!preview) return;
@@ -220,28 +225,8 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
     }
   }
 
-  async function retry(c: Conversion) {
-    setRetrying((prev) => new Set(prev).add(c.id));
-    try {
-      const { error } = await supabase.functions.invoke(CONVERT_FUNCTION, {
-        body: { conversionId: c.id },
-      });
-      if (error) throw error;
-      onToast("ok", "Reconverted");
-    } catch (e) {
-      onToast("err", e instanceof Error ? e.message : "Retry failed");
-    } finally {
-      setRetrying((prev) => {
-        const next = new Set(prev);
-        next.delete(c.id);
-        return next;
-      });
-      await onChange();
-    }
-  }
-
   async function remove(c: Conversion) {
-    await supabase.storage.from(MSG_BUCKET).remove([c.storage_path]);
+    if (c.storage_path) await supabase.storage.from(MSG_BUCKET).remove([c.storage_path]);
     if (c.output_path) await supabase.storage.from(MD_BUCKET).remove([c.output_path]);
     const { error } = await supabase.from("conversions").delete().eq("id", c.id);
     if (error) {
@@ -253,11 +238,13 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
   }
 
   async function deleteBatch(group: Group) {
-    const msgPaths = group.items.map((c) => c.storage_path);
+    const msgPaths = group.items
+      .map((c) => c.storage_path)
+      .filter((p): p is string => Boolean(p));
     const mdPaths = group.items
       .map((c) => c.output_path)
       .filter((p): p is string => Boolean(p));
-    await supabase.storage.from(MSG_BUCKET).remove(msgPaths);
+    if (msgPaths.length) await supabase.storage.from(MSG_BUCKET).remove(msgPaths);
     if (mdPaths.length) await supabase.storage.from(MD_BUCKET).remove(mdPaths);
     const { error } = await supabase
       .from("conversions")
@@ -359,6 +346,17 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
               group.key === "legacy"
                 ? "Earlier"
                 : `Upload #${groups.length - idx}`;
+            const pg = getPaging(group.key);
+            const totalPages = Math.max(
+              1,
+              Math.ceil(group.items.length / pg.size),
+            );
+            const page = Math.min(pg.page, totalPages);
+            const pageItems = group.items.slice(
+              (page - 1) * pg.size,
+              page * pg.size,
+            );
+            const showPager = group.items.length > PAGE_SIZES[0];
             return (
               <div className="batch" key={group.key}>
                 <div className="batch-head">
@@ -418,8 +416,34 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
                 </div>
 
                 {isOpen && (
-                  <ul className="rows">
-                    {group.items.map((c) => (
+                  <div className="batch-body">
+                    {showPager && (
+                      <div className="pager-top">
+                        <label className="pager-size">
+                          Show
+                          <select
+                            value={pg.size}
+                            onChange={(e) =>
+                              setPageSize(group.key, Number(e.target.value))
+                            }
+                          >
+                            {PAGE_SIZES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                          per page
+                        </label>
+                        <span className="pager-info">
+                          {(page - 1) * pg.size + 1}–
+                          {Math.min(page * pg.size, group.items.length)} of{" "}
+                          {group.items.length}
+                        </span>
+                      </div>
+                    )}
+                    <ul className="rows">
+                      {pageItems.map((c) => (
                       <li key={c.id} className="row">
                         <span className={`chip ${c.status}`}>
                           <span className="cdot" />
@@ -466,20 +490,6 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
                               </button>
                             </>
                           )}
-                          {(c.status === "error" || c.status === "pending") && (
-                            <button
-                              className="icon-btn"
-                              type="button"
-                              disabled={retrying.has(c.id)}
-                              onClick={() => retry(c)}
-                              title="Retry"
-                              aria-label="Retry"
-                            >
-                              <span className={retrying.has(c.id) ? "spin" : ""}>
-                                <IconRefresh size={17} />
-                              </span>
-                            </button>
-                          )}
                           <button
                             className="icon-btn danger"
                             type="button"
@@ -491,8 +501,32 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
                           </button>
                         </div>
                       </li>
-                    ))}
-                  </ul>
+                      ))}
+                    </ul>
+                    {totalPages > 1 && (
+                      <div className="pager-nav">
+                        <button
+                          className="btn-subtle btn-sm"
+                          type="button"
+                          disabled={page <= 1}
+                          onClick={() => setPage(group.key, page - 1)}
+                        >
+                          Prev
+                        </button>
+                        <span className="pager-info">
+                          Page {page} / {totalPages}
+                        </span>
+                        <button
+                          className="btn-subtle btn-sm"
+                          type="button"
+                          disabled={page >= totalPages}
+                          onClick={() => setPage(group.key, page + 1)}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             );
@@ -500,9 +534,10 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
         </div>
       )}
 
-      {preview && (
-        <div className="overlay" onClick={() => setPreview(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+      {preview &&
+        createPortal(
+          <div className="overlay" onClick={() => setPreview(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3>{preview.subject || preview.source_name}</h3>
               <div className="modal-actions">
@@ -561,8 +596,9 @@ export function ConversionList({ conversions, onChange, onToast }: Props) {
               )}
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </section>
   );
 }
