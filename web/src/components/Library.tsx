@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import JSZip from "jszip";
@@ -18,6 +18,7 @@ import {
   IconRefresh,
   IconSearch,
   IconSparkle,
+  IconSpinner,
   IconTrash,
   IconUpload,
   IconX,
@@ -38,6 +39,7 @@ const STATUS_LABEL: Record<Conversion["status"], string> = {
   error: "Failed",
 };
 const PAGE_SIZES = [10, 25, 50];
+const CONTENT_MATCH_LIMIT = 50;
 
 const mdName = (s: string) => s.replace(/\.msg$/i, "") + ".md";
 
@@ -83,21 +85,37 @@ function renderMarkdown(md: string): string {
   return DOMPurify.sanitize(marked.parse(md, { async: false }) as string);
 }
 
-async function zipConversions(list: Conversion[], filename: string) {
+/** Fetch the markdown column for a set of ids, chunked to keep URLs short. */
+async function fetchMarkdownMap(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await supabase
+      .from("conversions")
+      .select("id,markdown")
+      .in("id", chunk);
+    for (const r of data ?? [])
+      out.set(r.id as string, (r.markdown as string) ?? "");
+  }
+  return out;
+}
+
+async function zipItems(
+  items: { source_name: string; markdown: string }[],
+  filename: string,
+) {
   const zip = new JSZip();
   const used = new Map<string, number>();
-  for (const c of list) {
-    if (!c.markdown) continue;
-    const base = mdName(c.source_name);
+  for (const it of items) {
+    const base = mdName(it.source_name);
     const seen = used.get(base) ?? 0;
     const name = seen > 0 ? base.replace(/\.md$/, `-${seen}.md`) : base;
     used.set(base, seen + 1);
-    zip.file(name, c.markdown);
+    zip.file(name, it.markdown);
   }
   saveBlob(filename, await zip.generateAsync({ type: "blob" }));
 }
 
-/** Highlight every case-insensitive occurrence of `q` inside `text`. */
 function Highlight({ text, q }: { text: string; q: string }): ReactNode {
   if (!q) return text;
   const lower = text.toLocaleLowerCase("en");
@@ -139,12 +157,19 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<Conversion | null>(null);
+  const [previewMd, setPreviewMd] = useState<string | null>(null);
   const [rendered, setRendered] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [paging, setPaging] = useState<
     Record<string, { page: number; size: number }>
   >({});
-  const [zipping, setZipping] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Markdown fetched on demand, cached by id.
+  const [mdCache, setMdCache] = useState<Record<string, string>>({});
+  // ids whose body matched the current search (null = no content search).
+  const [contentIds, setContentIds] = useState<Set<string> | null>(null);
+  const cacheRef = useRef<Record<string, string>>({});
+  cacheRef.current = mdCache;
 
   const getPaging = (k: string) => paging[k] ?? { page: 1, size: 10 };
   const setPageSize = (k: string, size: number) =>
@@ -152,14 +177,56 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
   const setPage = (k: string, page: number) =>
     setPaging((p) => ({ ...p, [k]: { ...getPaging(k), page } }));
 
+  const q = query.trim();
+  const ql = q.toLocaleLowerCase("en");
+
+  async function getMarkdown(id: string): Promise<string> {
+    if (cacheRef.current[id] != null) return cacheRef.current[id];
+    const { data } = await supabase
+      .from("conversions")
+      .select("markdown")
+      .eq("id", id)
+      .single();
+    const md = (data?.markdown as string) ?? "";
+    setMdCache((prev) => ({ ...prev, [id]: md }));
+    return md;
+  }
+
+  // Content (full-text) search runs on the server so we never load every body.
+  useEffect(() => {
+    if (q.length < 2) {
+      setContentIds(null);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from("conversions")
+        .select("id,markdown")
+        .ilike("markdown", `%${q}%`)
+        .limit(CONTENT_MATCH_LIMIT);
+      if (cancelled) return;
+      const ids = new Set<string>();
+      const add: Record<string, string> = {};
+      for (const r of data ?? []) {
+        ids.add(r.id as string);
+        if (r.markdown) add[r.id as string] = r.markdown as string;
+      }
+      setContentIds(ids);
+      if (Object.keys(add).length) setMdCache((prev) => ({ ...prev, ...add }));
+    }, 320);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [q]);
+
   useEffect(() => {
     if (!preview) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPreview(null);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [preview]);
-
-  const q = query.trim();
 
   const stats = useMemo(() => {
     const weekAgo = Date.now() - 7 * 864e5;
@@ -179,17 +246,16 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
   }, [conversions]);
 
   const groups = useMemo<Group[]>(() => {
-    const ql = q.toLocaleLowerCase("en");
     const map = new Map<string, Conversion[]>();
     for (const c of conversions) {
       if (filter !== "all" && c.status !== filter) continue;
-      if (
-        ql &&
-        !c.source_name.toLocaleLowerCase("en").includes(ql) &&
-        !(c.subject ?? "").toLocaleLowerCase("en").includes(ql) &&
-        !(c.markdown ?? "").toLocaleLowerCase("en").includes(ql)
-      )
-        continue;
+      if (ql) {
+        const inMeta =
+          c.source_name.toLocaleLowerCase("en").includes(ql) ||
+          (c.subject ?? "").toLocaleLowerCase("en").includes(ql);
+        const inBody = contentIds?.has(c.id) ?? false;
+        if (!inMeta && !inBody) continue;
+      }
       const key = c.batch_id ?? "legacy";
       const arr = map.get(key);
       if (arr) arr.push(c);
@@ -205,10 +271,10 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
     }
     result.sort((a, b) => (a.latest < b.latest ? 1 : -1));
     return result;
-  }, [conversions, filter, q]);
+  }, [conversions, filter, ql, contentIds]);
 
   const allDone = useMemo(
-    () => conversions.filter((c) => c.status === "done" && c.markdown),
+    () => conversions.filter((c) => c.status === "done"),
     [conversions],
   );
 
@@ -221,37 +287,79 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
     });
   }
 
-  async function exportAll() {
-    if (allDone.length === 0) return;
-    setZipping(true);
+  async function withBusy<T>(fn: () => Promise<T>) {
+    setBusy(true);
     try {
-      await zipConversions(allDone, "msgmd-all.zip");
-      onToast("ok", `Exported ${allDone.length} file(s)`);
+      return await fn();
     } finally {
-      setZipping(false);
+      setBusy(false);
     }
   }
 
-  async function downloadBatch(g: Group) {
-    const done = g.items.filter((c) => c.status === "done" && c.markdown);
-    if (done.length === 0) return onToast("info", "Nothing converted yet");
-    await zipConversions(done, "msgmd-batch.zip");
-    onToast("ok", `Downloaded ${done.length} file(s)`);
+  async function exportAll() {
+    if (allDone.length === 0) return;
+    await withBusy(async () => {
+      const map = await fetchMarkdownMap(allDone.map((c) => c.id));
+      await zipItems(
+        allDone.map((c) => ({
+          source_name: c.source_name,
+          markdown: map.get(c.id) ?? "",
+        })),
+        "msgmd-all.zip",
+      );
+      onToast("ok", `Exported ${allDone.length} file(s)`);
+    });
   }
 
-  function mergeBatch(g: Group) {
-    const done = g.items.filter((c) => c.status === "done" && c.markdown);
+  async function downloadBatch(g: Group) {
+    const done = g.items.filter((c) => c.status === "done");
     if (done.length === 0) return onToast("info", "Nothing converted yet");
-    downloadText("msgmd-merged.md", done.map((c) => c.markdown).join("\n\n---\n\n"));
-    onToast("ok", `Merged ${done.length} file(s)`);
+    await withBusy(async () => {
+      const map = await fetchMarkdownMap(done.map((c) => c.id));
+      await zipItems(
+        done.map((c) => ({
+          source_name: c.source_name,
+          markdown: map.get(c.id) ?? "",
+        })),
+        "msgmd-batch.zip",
+      );
+      onToast("ok", `Downloaded ${done.length} file(s)`);
+    });
+  }
+
+  async function mergeBatch(g: Group) {
+    const done = g.items.filter((c) => c.status === "done");
+    if (done.length === 0) return onToast("info", "Nothing converted yet");
+    await withBusy(async () => {
+      const map = await fetchMarkdownMap(done.map((c) => c.id));
+      const merged = done
+        .map((c) => map.get(c.id) ?? "")
+        .join("\n\n---\n\n");
+      downloadText("msgmd-merged.md", merged);
+      onToast("ok", `Merged ${done.length} file(s)`);
+    });
+  }
+
+  async function downloadOne(c: Conversion) {
+    const md = await getMarkdown(c.id);
+    downloadText(mdName(c.source_name), md);
   }
 
   async function copyMarkdown(c: Conversion) {
     try {
-      await navigator.clipboard.writeText(c.markdown ?? "");
+      await navigator.clipboard.writeText(await getMarkdown(c.id));
       onToast("ok", "Copied to clipboard");
     } catch {
       onToast("err", "Copy failed");
+    }
+  }
+
+  async function openPreview(c: Conversion) {
+    setPreview(c);
+    setPreviewMd(cacheRef.current[c.id] ?? null);
+    if (cacheRef.current[c.id] == null) {
+      const md = await getMarkdown(c.id);
+      setPreviewMd(md);
     }
   }
 
@@ -263,16 +371,21 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
   }
 
   async function deleteBatch(g: Group) {
-    const { error } = await supabase
-      .from("conversions")
-      .delete()
-      .in(
-        "id",
-        g.items.map((c) => c.id),
-      );
-    if (error) onToast("err", "Delete failed: " + error.message);
-    else onToast("ok", "Batch deleted");
-    await onChange();
+    await withBusy(async () => {
+      const ids = g.items.map((c) => c.id);
+      for (let i = 0; i < ids.length; i += 100) {
+        const { error } = await supabase
+          .from("conversions")
+          .delete()
+          .in("id", ids.slice(i, i + 100));
+        if (error) {
+          onToast("err", "Delete failed: " + error.message);
+          break;
+        }
+      }
+      onToast("ok", "Batch deleted");
+      await onChange();
+    });
   }
 
   if (conversions.length === 0) {
@@ -340,7 +453,6 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
           <IconSearch size={18} />
           <input
             type="text"
-            autoFocus
             placeholder="Search names, subjects, and the words inside…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -370,11 +482,11 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
           <button
             className="btn-primary btn-sm export-btn"
             type="button"
-            disabled={allDone.length === 0 || zipping}
+            disabled={allDone.length === 0 || busy}
             onClick={exportAll}
           >
             <IconArchive size={15} />
-            {zipping ? "Preparing…" : `Export all (${allDone.length})`}
+            {busy ? "Working…" : `Export all (${allDone.length})`}
           </button>
           <button
             className="icon-btn"
@@ -386,6 +498,10 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
             <IconRefresh size={17} />
           </button>
         </div>
+
+        {q.length >= 2 && contentIds === null && (
+          <p className="empty small">Searching inside content…</p>
+        )}
 
         {groups.length === 0 ? (
           <p className="empty small">No results match your search.</p>
@@ -445,6 +561,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                       <button
                         className="icon-btn"
                         type="button"
+                        disabled={busy}
                         title="Download batch (.zip)"
                         aria-label="Download batch"
                         onClick={() => downloadBatch(group)}
@@ -454,6 +571,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                       <button
                         className="icon-btn"
                         type="button"
+                        disabled={busy}
                         title="Merge into one .md"
                         aria-label="Merge"
                         onClick={() => mergeBatch(group)}
@@ -463,6 +581,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                       <button
                         className="icon-btn danger"
                         type="button"
+                        disabled={busy}
                         title="Delete batch"
                         aria-label="Delete batch"
                         onClick={() => deleteBatch(group)}
@@ -501,15 +620,15 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                       )}
                       <ul className="rows">
                         {pageItems.map((c) => {
+                          const inMeta =
+                            !!ql &&
+                            (c.source_name.toLocaleLowerCase("en").includes(ql) ||
+                              (c.subject ?? "")
+                                .toLocaleLowerCase("en")
+                                .includes(ql));
                           const snip =
-                            q &&
-                            !c.source_name
-                              .toLocaleLowerCase("en")
-                              .includes(q.toLocaleLowerCase("en")) &&
-                            !(c.subject ?? "")
-                              .toLocaleLowerCase("en")
-                              .includes(q.toLocaleLowerCase("en"))
-                              ? contentSnippet(c.markdown ?? "", q)
+                            ql && !inMeta && cacheRef.current[c.id]
+                              ? contentSnippet(cacheRef.current[c.id], q)
                               : null;
                           return (
                             <li key={c.id} className="row">
@@ -549,7 +668,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                                     <button
                                       className="icon-btn"
                                       type="button"
-                                      onClick={() => setPreview(c)}
+                                      onClick={() => openPreview(c)}
                                       title="Preview"
                                       aria-label="Preview"
                                     >
@@ -558,12 +677,7 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                                     <button
                                       className="icon-btn"
                                       type="button"
-                                      onClick={() =>
-                                        downloadText(
-                                          mdName(c.source_name),
-                                          c.markdown ?? "",
-                                        )
-                                      }
+                                      onClick={() => downloadOne(c)}
                                       title="Download"
                                       aria-label="Download"
                                     >
@@ -643,16 +757,16 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                   <button
                     className="btn-subtle btn-sm"
                     type="button"
-                    onClick={() => copyMarkdown(preview)}
+                    disabled={previewMd == null}
+                    onClick={() => preview && copyMarkdown(preview)}
                   >
                     <IconCopy size={15} /> Copy
                   </button>
                   <button
                     className="btn-subtle btn-sm"
                     type="button"
-                    onClick={() =>
-                      downloadText(mdName(preview.source_name), preview.markdown ?? "")
-                    }
+                    disabled={previewMd == null}
+                    onClick={() => preview && downloadOne(preview)}
                   >
                     <IconDownload size={15} /> Download
                   </button>
@@ -667,15 +781,20 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                 </div>
               </div>
               <div className="modal-body">
-                {rendered ? (
+                {previewMd == null ? (
+                  <div className="modal-loading">
+                    <IconSpinner size={22} />
+                    <span>Loading…</span>
+                  </div>
+                ) : rendered ? (
                   <div
                     className="md-rendered"
                     dangerouslySetInnerHTML={{
-                      __html: renderMarkdown(preview.markdown ?? ""),
+                      __html: renderMarkdown(previewMd),
                     }}
                   />
                 ) : (
-                  <pre className="preview">{preview.markdown}</pre>
+                  <pre className="preview">{previewMd}</pre>
                 )}
               </div>
             </div>

@@ -880,6 +880,15 @@ input:focus {
   overflow: auto;
   padding: 20px;
 }
+.modal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 50px 0;
+  color: var(--muted);
+}
+
 .preview {
   margin: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

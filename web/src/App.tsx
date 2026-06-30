@@ -32,11 +32,25 @@ export function App() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("conversions")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (!error && data) setConversions(data as Conversion[]);
+    // Metadata only — never pull the (potentially huge) markdown column for the
+    // whole library. Markdown is fetched on demand (preview/download/search).
+    // Page through in 1000-row ranges so every row loads regardless of the
+    // server's per-request cap.
+    const cols =
+      "id,user_id,batch_id,source_name,subject,status,error,size_bytes,created_at,output_path,storage_path";
+    const PAGE = 1000;
+    const all: Conversion[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("conversions")
+        .select(cols)
+        .order("created_at", { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error || !data) break;
+      all.push(...(data as Conversion[]));
+      if (data.length < PAGE) break;
+    }
+    setConversions(all);
   }, []);
 
   useEffect(() => {
