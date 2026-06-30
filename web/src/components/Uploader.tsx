@@ -31,7 +31,29 @@ interface Item {
   error?: string;
 }
 
-const CONCURRENCY = 4;
+const CONCURRENCY = 3;
+const MAX_ATTEMPTS = 4;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Run a Supabase call that resolves to `{ error }`, retrying transient failures
+ * with exponential backoff so a brief disconnect mid-batch doesn't kill a file.
+ */
+async function runStep(
+  fn: () => Promise<{ error: unknown }>,
+  isCancelled: () => boolean,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    if (isCancelled()) throw { cancelled: true };
+    const { error } = await fn();
+    if (!error) return;
+    lastErr = error;
+    if (attempt < MAX_ATTEMPTS - 1) await sleep(700 * 2 ** attempt);
+  }
+  throw lastErr;
+}
 
 const STAGE_LABEL: Record<Status, string> = {
   queued: "Queued",
@@ -101,37 +123,44 @@ export function Uploader({ userId, onDone, onToast }: Props) {
       const path = `${userId}/${convId}.msg`;
       const isCancelled = () => cancelled.current.has(id);
       try {
-        if (isCancelled()) throw { cancelled: true };
-        const { error: upErr } = await supabase.storage
-          .from(MSG_BUCKET)
-          .upload(path, file, {
-            contentType: "application/vnd.ms-outlook",
-            upsert: false,
-          });
-        if (upErr) throw upErr;
+        // Each step is idempotent (upsert) so a retry after a dropped
+        // connection can't create duplicates.
+        await runStep(
+          () =>
+            supabase.storage.from(MSG_BUCKET).upload(path, file, {
+              contentType: "application/vnd.ms-outlook",
+              upsert: true,
+            }),
+          isCancelled,
+        );
 
-        if (isCancelled()) {
-          await supabase.storage.from(MSG_BUCKET).remove([path]);
-          throw { cancelled: true };
-        }
-
-        const { error: insErr } = await supabase.from("conversions").insert({
-          id: convId,
-          user_id: userId,
-          batch_id: batchId,
-          source_name: file.name,
-          storage_path: path,
-          size_bytes: file.size,
-          status: "pending",
-        });
-        if (insErr) throw insErr;
+        await runStep(
+          async () =>
+            supabase
+              .from("conversions")
+              .upsert(
+                {
+                  id: convId,
+                  user_id: userId,
+                  batch_id: batchId,
+                  source_name: file.name,
+                  storage_path: path,
+                  size_bytes: file.size,
+                  status: "pending",
+                },
+                { onConflict: "id" },
+              ),
+          isCancelled,
+        );
         patch(id, { status: "converting" });
 
-        const { error: fnErr } = await supabase.functions.invoke(
-          CONVERT_FUNCTION,
-          { body: { conversionId: convId } },
+        await runStep(
+          () =>
+            supabase.functions.invoke(CONVERT_FUNCTION, {
+              body: { conversionId: convId },
+            }),
+          isCancelled,
         );
-        if (fnErr) throw fnErr;
 
         patch(id, { status: "done" });
         batchTally.current.ok += 1;
