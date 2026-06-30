@@ -1,9 +1,14 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase.ts";
+import { IconSpinner } from "./icons.tsx";
 
 type Mode = "signin" | "signup" | "magic";
 
-export function Auth() {
+interface Props {
+  onToast: (kind: "ok" | "err" | "info", text: string) => void;
+}
+
+export function Auth({ onToast }: Props) {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,9 +32,8 @@ export function Auth() {
       } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setMessage(
-          "Kayıt oluşturuldu. E-posta doğrulaması açıksa gelen kutunu kontrol et.",
-        );
+        setMessage("Kayıt oluşturuldu. Gerekirse e-postandaki bağlantıyı onayla.");
+        onToast("ok", "Hesap oluşturuldu");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -46,21 +50,24 @@ export function Auth() {
 
   return (
     <section className="card auth">
-      <h2>Giriş yap</h2>
+      <div className="eyebrow">msgmd</div>
+      <h2>Tekrar hoş geldin</h2>
+      <p className="sub">.msg arşivini saniyeler içinde temiz Markdown'a çevir.</p>
+
       <div className="tabs">
         <button
           className={mode === "signin" ? "active" : ""}
           onClick={() => setMode("signin")}
           type="button"
         >
-          Parola ile
+          Parola
         </button>
         <button
           className={mode === "magic" ? "active" : ""}
           onClick={() => setMode("magic")}
           type="button"
         >
-          E-posta bağlantısı
+          E-posta linki
         </button>
         <button
           className={mode === "signup" ? "active" : ""}
@@ -92,19 +99,19 @@ export function Auth() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              autoComplete={
-                mode === "signup" ? "new-password" : "current-password"
-              }
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              placeholder="••••••••"
             />
           </label>
         )}
-        <button className="primary" type="submit" disabled={busy}>
+        <button className="btn-primary" type="submit" disabled={busy}>
+          {busy && <IconSpinner size={16} />}
           {busy
             ? "Gönderiliyor…"
             : mode === "magic"
               ? "Bağlantı gönder"
               : mode === "signup"
-                ? "Kayıt ol"
+                ? "Hesap oluştur"
                 : "Giriş yap"}
         </button>
       </form>

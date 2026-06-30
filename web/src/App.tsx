@@ -2,14 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase.ts";
 import type { Conversion } from "./lib/types.ts";
+import { useToasts } from "./lib/useToasts.ts";
 import { Auth } from "./components/Auth.tsx";
 import { Uploader } from "./components/Uploader.tsx";
 import { ConversionList } from "./components/ConversionList.tsx";
+import { Toasts } from "./components/Toasts.tsx";
+import { IconLogout, IconSpinner } from "./components/icons.tsx";
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   const [conversions, setConversions] = useState<Conversion[]>([]);
+  const { toasts, push, dismiss } = useToasts();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -42,30 +46,34 @@ export function App() {
 
   if (loadingSession) {
     return (
-      <main className="container">
+      <div className="center-load">
+        <IconSpinner size={26} />
         <p className="muted">Yükleniyor…</p>
-      </main>
+      </div>
     );
   }
+
+  const initial = session?.user.email?.[0]?.toUpperCase() ?? "?";
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="logo">✉️→📝</span>
+          <span className="mark">✦</span>
           <div>
             <h1>msgmd</h1>
-            <p className="muted">Outlook .msg → temiz Markdown</p>
+            <div className="tag">Outlook .msg → zarif Markdown</div>
           </div>
         </div>
         {session && (
           <div className="account">
-            <span className="muted">{session.user.email}</span>
+            <span className="avatar">{initial}</span>
+            <span className="email">{session.user.email}</span>
             <button
-              className="ghost"
+              className="btn-ghost btn-sm"
               onClick={() => supabase.auth.signOut()}
             >
-              Çıkış
+              <IconLogout size={15} /> Çıkış
             </button>
           </div>
         )}
@@ -73,18 +81,26 @@ export function App() {
 
       <main className="container">
         {!session ? (
-          <Auth />
+          <div className="auth-wrap">
+            <Auth onToast={push} />
+          </div>
         ) : (
           <>
-            <Uploader userId={session.user.id} onDone={refresh} />
-            <ConversionList conversions={conversions} onChange={refresh} />
+            <Uploader userId={session.user.id} onDone={refresh} onToast={push} />
+            <ConversionList
+              conversions={conversions}
+              onChange={refresh}
+              onToast={push}
+            />
           </>
         )}
       </main>
 
-      <footer className="footer muted">
-        Dosyalar yalnızca senin hesabında saklanır (RLS korumalı).
+      <footer className="footer">
+        Dosyaların yalnızca senin hesabında saklanır · uçtan uca RLS korumalı
       </footer>
+
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }
