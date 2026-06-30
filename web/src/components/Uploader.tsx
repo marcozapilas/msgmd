@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { MSG_BUCKET, supabase } from "../lib/supabase.ts";
+import { CONVERT_FUNCTION, MSG_BUCKET, supabase } from "../lib/supabase.ts";
 
 interface Props {
   userId: string;
@@ -47,9 +47,10 @@ export function Uploader({ userId, onDone }: Props) {
       if (insErr) throw insErr;
 
       update(index, { status: "converting" });
-      const { error: fnErr } = await supabase.functions.invoke("convert-msg", {
-        body: { conversionId: id },
-      });
+      const { error: fnErr } = await supabase.functions.invoke(
+        CONVERT_FUNCTION,
+        { body: { conversionId: id } },
+      );
       if (fnErr) throw fnErr;
 
       update(index, { status: "done" });
