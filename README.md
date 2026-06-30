@@ -40,17 +40,13 @@ msgmd/
 └── tsconfig.json
 ```
 
-### One conversion core, two runtimes
+### Conversion logic
 
-`src/core/converter.ts` is intentionally a **single file with no relative
-imports and no Node-only APIs** (no `fs`, no `Buffer`). That lets the exact same
-source be consumed by:
-
-- the **Node CLI**, importing it as `./core/converter.js`, and
-- the **Deno Edge Function**, importing it as `../../../src/core/converter.ts`
-  (npm deps resolved via `supabase/functions/import_map.json`).
-
-So there is a single source of truth for parsing and Markdown generation.
+`src/core/converter.ts` holds the CLI's conversion core (no Node-only APIs).
+The Edge Function `supabase/functions/convert-msg/index.ts` inlines the same
+logic with `npm:` imports so it can be **deployed straight from the Supabase
+Dashboard with no CLI or Docker**. The two mirror each other — keep them in sync
+if you change conversion behaviour.
 
 ---
 
@@ -112,26 +108,24 @@ Output dir  : /path/to/msgmd/output
 
 ## Web app setup
 
-### 1. Supabase (you provision the project)
+### 1. Supabase — no-CLI path (browser only)
 
-```bash
-# Install the CLI once: https://supabase.com/docs/guides/cli
-supabase login
-supabase link --project-ref <YOUR_PROJECT_REF>
+1. **Database:** Dashboard → **SQL Editor** → paste the contents of
+   `supabase/migrations/0001_init.sql` → **Run**. This creates the
+   `conversions` table, the `msg-uploads` / `md-outputs` private buckets, and
+   all row-level-security policies.
+2. **Edge Function:** Dashboard → **Edge Functions** → **Deploy a new
+   function** → name it exactly `convert-msg` → paste the contents of
+   `supabase/functions/convert-msg/index.ts` → **Deploy**. (It uses only
+   `npm:` imports, so no CLI/Docker is required.)
+3. **Auth:** Dashboard → **Authentication → Providers** → make sure **Email**
+   is enabled (password and/or magic link are both used by the UI).
 
-# Apply schema: conversions table, RLS, and the two private storage buckets
-supabase db push        # applies supabase/migrations/0001_init.sql
+> No service-role key is needed anywhere — the function uses the signed-in
+> user's token, and RLS keeps every user to their own data.
 
-# Deploy the Edge Function (verify_jwt + import_map come from config.toml)
-supabase functions deploy convert-msg
-```
-
-> The migration creates the `msg-uploads` and `md-outputs` buckets and their
-> per-user RLS policies, plus the `conversions` table. No service-role key is
-> needed anywhere — the function uses the signed-in user's token.
-
-Enable the auth methods you want under **Authentication → Providers** (email
-password and/or magic link are used by the UI out of the box).
+CLI alternative (optional): `supabase link --project-ref <ref>` then
+`supabase db push` and `supabase functions deploy convert-msg`.
 
 ### 2. Frontend (local dev)
 

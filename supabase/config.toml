@@ -4,4 +4,3 @@ project_id = "msgmd"
 
 [functions.convert-msg]
 verify_jwt = true
-import_map = "./functions/import_map.json"
