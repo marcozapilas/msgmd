@@ -86,6 +86,10 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
   const cancelled = useRef<Set<string>>(new Set());
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchTally = useRef({ ok: 0, err: 0, total: 0 });
+  // Concurrency is tracked with plain refs (not React state) so scheduling
+  // never depends on render timing — the queue can't stall at scale.
+  const pending = useRef<{ id: string; file: File; batchId: string }[]>([]);
+  const active = useRef(0);
 
   const setItems = useCallback((updater: (prev: Item[]) => Item[]) => {
     setItemsState((prev) => {
@@ -108,13 +112,8 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
   }, [onDone]);
 
   const announceIfBatchEnded = useCallback(() => {
-    const active = itemsRef.current.some(
-      (it) =>
-        it.status === "uploading" ||
-        it.status === "converting" ||
-        it.status === "queued",
-    );
-    if (!active && batchTally.current.total > 0) {
+    const stillWorking = active.current > 0 || pending.current.length > 0;
+    if (!stillWorking && batchTally.current.total > 0) {
       const { ok, err } = batchTally.current;
       if (ok > 0 && err === 0) onToast("ok", `${ok} file(s) converted`);
       else if (ok > 0 && err > 0) onToast("info", `${ok} done, ${err} failed`);
@@ -182,6 +181,7 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
           batchTally.current.err += 1;
         }
       } finally {
+        active.current = Math.max(0, active.current - 1);
         scheduleRefresh();
         pump();
         announceIfBatchEnded();
@@ -192,20 +192,15 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
   );
 
   const pump = useCallback(() => {
-    const list = itemsRef.current;
-    let active = list.filter(
-      (it) => it.status === "uploading" || it.status === "converting",
-    ).length;
-    for (const it of list) {
-      if (active >= CONCURRENCY) break;
-      if (it.status !== "queued") continue;
-      if (cancelled.current.has(it.id)) {
-        patch(it.id, { status: "cancelled" });
+    while (active.current < CONCURRENCY && pending.current.length > 0) {
+      const next = pending.current.shift()!;
+      if (cancelled.current.has(next.id)) {
+        patch(next.id, { status: "cancelled" });
         continue;
       }
-      active += 1;
-      patch(it.id, { status: "uploading" });
-      void runItem(it.id, it.file, it.batchId);
+      active.current += 1;
+      patch(next.id, { status: "uploading" });
+      void runItem(next.id, next.file, next.batchId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patch, runItem]);
@@ -225,8 +220,11 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
         batchId,
         status: "queued",
       }));
+      for (const it of newItems) {
+        pending.current.push({ id: it.id, file: it.file, batchId });
+      }
       setItems((prev) => [...prev, ...newItems]);
-      setTimeout(pump, 0);
+      pump();
     },
     [onToast, pump, setItems],
   );
@@ -234,21 +232,24 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
   const cancelItem = useCallback(
     (id: string) => {
       cancelled.current.add(id);
-      const item = itemsRef.current.find((it) => it.id === id);
-      if (item && item.status === "queued") patch(id, { status: "cancelled" });
+      const idx = pending.current.findIndex((p) => p.id === id);
+      if (idx >= 0) {
+        pending.current.splice(idx, 1);
+        patch(id, { status: "cancelled" });
+      }
     },
     [patch],
   );
 
   const cancelAll = useCallback(() => {
+    for (const p of pending.current) {
+      cancelled.current.add(p.id);
+      patch(p.id, { status: "cancelled" });
+    }
+    pending.current = [];
     for (const it of itemsRef.current) {
-      if (
-        it.status === "queued" ||
-        it.status === "uploading" ||
-        it.status === "converting"
-      ) {
+      if (it.status === "uploading" || it.status === "converting") {
         cancelled.current.add(it.id);
-        if (it.status === "queued") patch(it.id, { status: "cancelled" });
       }
     }
   }, [patch]);
@@ -313,6 +314,20 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
     return s;
   }, [items]);
 
+  // Only ever render the handful of in-flight items and a capped list of
+  // failures — never the full queue (thousands of rows would freeze the tab).
+  const activeItems = useMemo(
+    () =>
+      items.filter(
+        (it) => it.status === "uploading" || it.status === "converting",
+      ),
+    [items],
+  );
+  const errorItems = useMemo(
+    () => items.filter((it) => it.status === "error"),
+    [items],
+  );
+
   const total = items.length;
   const settled = items.filter(
     (it) =>
@@ -327,6 +342,52 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
       it.status === "done" ||
       it.status === "error" ||
       it.status === "cancelled",
+  );
+
+  const renderItem = (it: Item) => (
+    <li key={it.id} className="q-item">
+      <span className={`q-ic ${it.status}`}>
+        {it.status === "done" ? (
+          <IconCheck size={16} />
+        ) : it.status === "error" ? (
+          <IconAlert size={16} />
+        ) : it.status === "cancelled" ? (
+          <IconX size={16} />
+        ) : it.status === "queued" ? (
+          <IconClock size={16} />
+        ) : (
+          <IconSpinner size={16} />
+        )}
+      </span>
+      <div className="q-body">
+        <div className="q-name">{it.file.name}</div>
+        <div className="q-meta">
+          <span>{formatBytes(it.file.size)}</span>
+          <span>·</span>
+          <span className="q-stage">
+            {it.status === "error" && it.error ? it.error : STAGE_LABEL[it.status]}
+          </span>
+        </div>
+        {(it.status === "uploading" || it.status === "converting") && (
+          <div className="mini-bar">
+            <div className="mini-fill" />
+          </div>
+        )}
+      </div>
+      {(it.status === "queued" ||
+        it.status === "uploading" ||
+        it.status === "converting") && (
+        <button
+          className="icon-btn danger"
+          type="button"
+          onClick={() => cancelItem(it.id)}
+          aria-label="Cancel"
+          title="Cancel"
+        >
+          <IconX size={16} />
+        </button>
+      )}
+    </li>
   );
 
   return (
@@ -433,56 +494,22 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
               <div className="overall-fill" style={{ width: `${pct}%` }} />
             </div>
 
-            <ul className="q-list">
-              {items.map((it) => (
-                <li key={it.id} className="q-item">
-                  <span className={`q-ic ${it.status}`}>
-                    {it.status === "done" ? (
-                      <IconCheck size={16} />
-                    ) : it.status === "error" ? (
-                      <IconAlert size={16} />
-                    ) : it.status === "cancelled" ? (
-                      <IconX size={16} />
-                    ) : it.status === "queued" ? (
-                      <IconClock size={16} />
-                    ) : (
-                      <IconSpinner size={16} />
-                    )}
-                  </span>
-                  <div className="q-body">
-                    <div className="q-name">{it.file.name}</div>
-                    <div className="q-meta">
-                      <span>{formatBytes(it.file.size)}</span>
-                      <span>·</span>
-                      <span className="q-stage">
-                        {it.status === "error" && it.error
-                          ? it.error
-                          : STAGE_LABEL[it.status]}
-                      </span>
-                    </div>
-                    {(it.status === "uploading" ||
-                      it.status === "converting") && (
-                      <div className="mini-bar">
-                        <div className="mini-fill" />
-                      </div>
-                    )}
-                  </div>
-                  {(it.status === "queued" ||
-                    it.status === "uploading" ||
-                    it.status === "converting") && (
-                    <button
-                      className="icon-btn danger"
-                      type="button"
-                      onClick={() => cancelItem(it.id)}
-                      aria-label="Cancel"
-                      title="Cancel"
-                    >
-                      <IconX size={16} />
-                    </button>
+            {activeItems.length > 0 && (
+              <ul className="q-list">{activeItems.map(renderItem)}</ul>
+            )}
+            {errorItems.length > 0 && (
+              <>
+                <div className="q-subhead">Failed ({errorItems.length})</div>
+                <ul className="q-list">
+                  {errorItems.slice(0, 8).map(renderItem)}
+                  {errorItems.length > 8 && (
+                    <li className="q-more">
+                      +{errorItems.length - 8} more failed
+                    </li>
                   )}
-                </li>
-              ))}
-            </ul>
+                </ul>
+              </>
+            )}
           </div>
         )}
       </section>
