@@ -9,27 +9,27 @@
   color-scheme: light dark;
 
   /* Surfaces */
-  --bg: #faf7f2;
+  --bg: #f6f7f9;
   --surface: #ffffff;
-  --surface-2: #f5f0e8;
-  --surface-3: #ede6da;
+  --surface-2: #eff1f4;
+  --surface-3: #e4e7ec;
 
   /* Ink */
-  --ink: #201b15;
-  --ink-2: #5d5546;
-  --ink-3: #877e6c;
+  --ink: #171c26;
+  --ink-2: #525a68;
+  --ink-3: #828a98;
 
   /* Lines */
-  --line: #e7dfd1;
-  --line-strong: #d4c9b4;
+  --line: #e4e7ec;
+  --line-strong: #cfd4dd;
 
-  /* Accent — burnished copper */
-  --accent: #9a571e;
-  --accent-hover: #834a18;
-  --accent-text: #8a4f1d;
-  --accent-ink: #fff8ef;
-  --accent-soft: #f4e7d6;
-  --accent-soft-line: #e6d2b6;
+  /* Accent — midnight blue */
+  --accent: #3450a3;
+  --accent-hover: #2a4187;
+  --accent-text: #2f4a99;
+  --accent-ink: #f4f7ff;
+  --accent-soft: #e7ecf8;
+  --accent-soft-line: #cbd6ef;
 
   /* Status */
   --ok: #2e7d4f;
@@ -40,11 +40,11 @@
   --info-soft: #e4eef7;
 
   /* Focus */
-  --focus: #b4732f;
+  --focus: #3450a3;
 
   /* Elevation — overlays only; flat surfaces rely on borders */
-  --shadow-1: 0 1px 2px rgba(32, 27, 21, 0.05);
-  --shadow-2: 0 12px 40px -12px rgba(32, 27, 21, 0.25);
+  --shadow-1: 0 1px 2px rgba(23, 28, 38, 0.05);
+  --shadow-2: 0 12px 40px -12px rgba(23, 28, 38, 0.25);
 
   /* Radii — restrained, three steps + pill for chips only */
   --r-sm: 6px;
@@ -70,33 +70,33 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #151109;
-    --surface: #1e1812;
-    --surface-2: #282017;
-    --surface-3: #33291d;
+    --bg: #12151c;
+    --surface: #191d26;
+    --surface-2: #222734;
+    --surface-3: #2b3140;
 
-    --ink: #f2ebdf;
-    --ink-2: #bfb29c;
-    --ink-3: #8d8170;
+    --ink: #e9ecf2;
+    --ink-2: #a6adbc;
+    --ink-3: #767e8e;
 
-    --line: #352c1f;
-    --line-strong: #4c3f2b;
+    --line: #2b3140;
+    --line-strong: #3d4557;
 
-    --accent: #d89a4c;
-    --accent-hover: #e4ac62;
-    --accent-text: #e2a85e;
-    --accent-ink: #2a1a06;
-    --accent-soft: #322516;
-    --accent-soft-line: #4c3a20;
+    --accent: #85a0ea;
+    --accent-hover: #97b0f0;
+    --accent-text: #9db4f0;
+    --accent-ink: #10152a;
+    --accent-soft: #232c44;
+    --accent-soft-line: #354262;
 
-    --ok: #7fc291;
-    --ok-soft: #22301f;
-    --err: #e58d77;
-    --err-soft: #3a231c;
+    --ok: #74c48e;
+    --ok-soft: #1d2f24;
+    --err: #e88b7d;
+    --err-soft: #38221e;
     --info: #85b2de;
     --info-soft: #1f2b38;
 
-    --focus: #d89a4c;
+    --focus: #85a0ea;
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-2: 0 16px 48px -12px rgba(0, 0, 0, 0.6);
@@ -1226,7 +1226,7 @@ mark {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(24, 19, 13, 0.45);
+  background: rgba(13, 16, 24, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
