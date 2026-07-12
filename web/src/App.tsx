@@ -11,9 +11,12 @@ import { Toasts } from "./components/Toasts.tsx";
 import {
   IconLayers,
   IconMark,
+  IconMoon,
   IconSpinner,
+  IconSun,
   IconUpload,
 } from "./components/icons.tsx";
+import { useTheme } from "./lib/useTheme.ts";
 
 type View = "convert" | "library";
 
@@ -24,6 +27,7 @@ export function App() {
   const [view, setView] = useState<View>("convert");
   const [profileOpen, setProfileOpen] = useState(false);
   const { toasts, push, dismiss } = useToasts();
+  const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -121,6 +125,15 @@ export function App() {
             )}
           </button>
         </nav>
+
+        <button
+          className="rail-item theme-toggle"
+          onClick={toggleTheme}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? <IconSun size={19} /> : <IconMoon size={19} />}
+          <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+        </button>
 
         <button className="rail-profile" onClick={() => setProfileOpen(true)}>
           <span className="avatar">{initial}</span>

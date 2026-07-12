@@ -26,6 +26,24 @@
     />
   </head>
   <body>
+    <script>
+      // Set the theme before first paint: stored choice wins, else follow the
+      // system preference.
+      (function () {
+        try {
+          var stored = localStorage.getItem("msgmd-theme");
+          var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : dark
+                ? "dark"
+                : "light";
+        } catch (e) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

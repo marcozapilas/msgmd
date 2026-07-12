@@ -6,7 +6,7 @@
    ========================================================================== */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Surfaces — sun-bleached plaster with a hint of sea */
   --bg: #f4f8f7;
@@ -68,9 +68,11 @@
   --t-med: 200ms ease;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1a1b;
+/* Dark theme — applied via data-theme, set before paint by the inline script
+   in index.html (stored preference, else system preference). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1a1b;
     --surface: #152223;
     --surface-2: #1d2c2d;
     --surface-3: #263738;
@@ -100,7 +102,6 @@
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-2: 0 16px 48px -12px rgba(0, 0, 0, 0.6);
-  }
 }
 
 /* ============================================================================
@@ -344,8 +345,11 @@ button:disabled {
   color: var(--accent-text);
 }
 
-.rail-profile {
+.theme-toggle {
   margin-top: auto;
+}
+
+.rail-profile {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -1609,6 +1613,9 @@ mark {
   .rail-item {
     justify-content: center;
     padding: 10px 14px;
+  }
+  .theme-toggle {
+    margin-top: 0;
   }
   .rail-profile {
     margin-top: 0;
