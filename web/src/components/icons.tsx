@@ -122,6 +122,19 @@ export const IconLogout = ({ size }: P) => (
   </svg>
 );
 
+/** Brand mark — filled four-point compass spark (not an emoji). */
+export const IconMark = ({ size }: P) => (
+  <svg
+    width={size ?? 20}
+    height={size ?? 20}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M12 1.5c.8 5.3 4.7 9.2 10 10v1c-5.3.8-9.2 4.7-10 10h-1c-.8-5.3-4.7-9.2-10-10v-1c5.3-.8 9.2-4.7 10-10h1Z" />
+  </svg>
+);
+
 export const IconUser = ({ size }: P) => (
   <svg {...base(size)}>
     <circle cx="12" cy="8" r="4" />

@@ -8,7 +8,12 @@ import { Uploader } from "./components/Uploader.tsx";
 import { Library } from "./components/Library.tsx";
 import { ProfileModal } from "./components/ProfileModal.tsx";
 import { Toasts } from "./components/Toasts.tsx";
-import { IconLayers, IconSpinner, IconUpload } from "./components/icons.tsx";
+import {
+  IconLayers,
+  IconMark,
+  IconSpinner,
+  IconUpload,
+} from "./components/icons.tsx";
 
 type View = "convert" | "library";
 
@@ -91,7 +96,9 @@ export function App() {
     <div className="shell">
       <aside className="rail">
         <div className="rail-brand">
-          <span className="mark">✦</span>
+          <span className="brand-mark">
+            <IconMark size={19} />
+          </span>
           <span className="rail-word">msgmd</span>
         </div>
 

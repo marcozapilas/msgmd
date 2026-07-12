@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase.ts";
-import { IconSpinner } from "./icons.tsx";
+import { IconCheck, IconMark, IconSpinner } from "./icons.tsx";
 
 type Mode = "signin" | "signup" | "magic";
 
@@ -28,12 +28,12 @@ export function Auth({ onToast }: Props) {
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        setMessage("Giriş bağlantısı e-postana gönderildi.");
+        setMessage("Check your inbox — we sent you a sign-in link.");
       } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setMessage("Kayıt oluşturuldu. Gerekirse e-postandaki bağlantıyı onayla.");
-        onToast("ok", "Hesap oluşturuldu");
+        setMessage("Account created. Confirm via the email link if required.");
+        onToast("ok", "Account created");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -49,75 +49,103 @@ export function Auth({ onToast }: Props) {
   }
 
   return (
-    <section className="card auth">
-      <div className="eyebrow">msgmd</div>
-      <h2>Tekrar hoş geldin</h2>
-      <p className="sub">.msg arşivini saniyeler içinde temiz Markdown'a çevir.</p>
+    <div className="auth-split">
+      <aside className="auth-brand">
+        <div className="brand-row">
+          <span className="brand-mark">
+            <IconMark size={18} />
+          </span>
+          msgmd
+        </div>
+        <h1>Outlook mail, reborn as clean Markdown.</h1>
+        <ul className="auth-points">
+          <li>
+            <IconCheck size={15} />
+            Converted locally in your browser — messages never leave your
+            device
+          </li>
+          <li>
+            <IconCheck size={15} />
+            Batch uploads with per-batch export and merge
+          </li>
+          <li>
+            <IconCheck size={15} />
+            Full-text search across everything you convert
+          </li>
+        </ul>
+      </aside>
 
-      <div className="tabs">
-        <button
-          className={mode === "signin" ? "active" : ""}
-          onClick={() => setMode("signin")}
-          type="button"
-        >
-          Parola
-        </button>
-        <button
-          className={mode === "magic" ? "active" : ""}
-          onClick={() => setMode("magic")}
-          type="button"
-        >
-          E-posta linki
-        </button>
-        <button
-          className={mode === "signup" ? "active" : ""}
-          onClick={() => setMode("signup")}
-          type="button"
-        >
-          Kayıt ol
-        </button>
-      </div>
+      <section className="auth">
+        <h2>Welcome back</h2>
+        <p className="sub">Sign in to pick up right where you left off.</p>
 
-      <form onSubmit={submit}>
-        <label>
-          E-posta
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            placeholder="ornek@sirket.com"
-          />
-        </label>
-        {mode !== "magic" && (
+        <div className="tabs">
+          <button
+            className={mode === "signin" ? "active" : ""}
+            onClick={() => setMode("signin")}
+            type="button"
+          >
+            Password
+          </button>
+          <button
+            className={mode === "magic" ? "active" : ""}
+            onClick={() => setMode("magic")}
+            type="button"
+          >
+            Email link
+          </button>
+          <button
+            className={mode === "signup" ? "active" : ""}
+            onClick={() => setMode("signup")}
+            type="button"
+          >
+            Sign up
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
           <label>
-            Parola
+            Email
             <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
-              minLength={6}
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              placeholder="••••••••"
+              autoComplete="email"
+              placeholder="you@company.com"
             />
           </label>
-        )}
-        <button className="btn-primary" type="submit" disabled={busy}>
-          {busy && <IconSpinner size={16} />}
-          {busy
-            ? "Gönderiliyor…"
-            : mode === "magic"
-              ? "Bağlantı gönder"
-              : mode === "signup"
-                ? "Hesap oluştur"
-                : "Giriş yap"}
-        </button>
-      </form>
+          {mode !== "magic" && (
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete={
+                  mode === "signup" ? "new-password" : "current-password"
+                }
+                placeholder="••••••••"
+              />
+            </label>
+          )}
+          <button className="btn-primary" type="submit" disabled={busy}>
+            {busy && <IconSpinner size={16} />}
+            {busy
+              ? "Sending…"
+              : mode === "magic"
+                ? "Send magic link"
+                : mode === "signup"
+                  ? "Create account"
+                  : "Sign in"}
+          </button>
+        </form>
 
-      {message && <p className="notice ok">{message}</p>}
-      {error && <p className="notice err">{error}</p>}
-    </section>
+        {message && <p className="notice ok">{message}</p>}
+        {error && <p className="notice err">{error}</p>}
+      </section>
+    </div>
   );
 }
