@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase.ts";
 import type { Conversion } from "../lib/types.ts";
+import { SelectionBar } from "./SelectionBar.tsx";
 import {
   IconArchive,
+  IconChecklist,
   IconChevron,
   IconCopy,
   IconDownload,
@@ -26,6 +28,15 @@ interface Props {
   onChange: () => void | Promise<void>;
   onToast: (kind: "ok" | "err" | "info", text: string) => void;
   onGoConvert: () => void;
+  // Evidence selection (state owned by App so it survives view switches)
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onEnterSelectMode: () => void;
+  onExitSelectMode: () => void;
+  onToggleId: (id: string) => void;
+  onSelectMany: (ids: string[], selected: boolean) => void;
+  onClearSelection: () => void;
+  onCreateSop: () => void;
 }
 
 type Filter = "all" | "done" | "pending" | "error";
@@ -157,7 +168,20 @@ interface Group {
   latest: string;
 }
 
-export function Library({ conversions, onChange, onToast, onGoConvert }: Props) {
+export function Library({
+  conversions,
+  onChange,
+  onToast,
+  onGoConvert,
+  selectMode,
+  selectedIds,
+  onEnterSelectMode,
+  onExitSelectMode,
+  onToggleId,
+  onSelectMany,
+  onClearSelection,
+  onCreateSop,
+}: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<Conversion | null>(null);
@@ -169,6 +193,9 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
     Record<string, { page: number; size: number }>
   >({});
   const [busy, setBusy] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  // Master "Select visible" checkbox needs a ref for the indeterminate state.
+  const masterRef = useRef<HTMLInputElement>(null);
   // Markdown fetched on demand, cached by id.
   const [mdCache, setMdCache] = useState<Record<string, string>>({});
   // ids whose body matched the current search (null = no content search).
@@ -293,6 +320,53 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
     result.sort((a, b) => (a.latest < b.latest ? 1 : -1));
     return result;
   }, [conversions, filter, ql, contentIds]);
+
+  // IDs of rows currently rendered AND selectable (status done). Mirrors the
+  // exact render logic below: expanded groups only, current page slice only.
+  // "Select visible" therefore never implies unseen pages or other results.
+  const visibleSelectableIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const g of groups) {
+      if (collapsed.has(g.key)) continue;
+      const pg = paging[g.key] ?? { page: 1, size: 10 };
+      const totalPages = Math.max(1, Math.ceil(g.items.length / pg.size));
+      const page = Math.min(pg.page, totalPages);
+      for (const c of g.items.slice((page - 1) * pg.size, page * pg.size)) {
+        if (c.status === "done") ids.push(c.id);
+      }
+    }
+    return ids;
+  }, [groups, collapsed, paging]);
+
+  const visibleSelectedCount = useMemo(
+    () => visibleSelectableIds.filter((id) => selectedIds.has(id)).length,
+    [visibleSelectableIds, selectedIds],
+  );
+  const allVisibleSelected =
+    visibleSelectableIds.length > 0 &&
+    visibleSelectedCount === visibleSelectableIds.length;
+  const someVisibleSelected =
+    visibleSelectedCount > 0 && !allVisibleSelected;
+
+  useEffect(() => {
+    if (masterRef.current) masterRef.current.indeterminate = someVisibleSelected;
+  }, [someVisibleSelected]);
+
+  const selectedList = useMemo(
+    () => conversions.filter((c) => selectedIds.has(c.id)),
+    [conversions, selectedIds],
+  );
+
+  useEffect(() => {
+    if (selectedIds.size === 0) setReviewOpen(false);
+  }, [selectedIds]);
+
+  useEffect(() => {
+    if (!reviewOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setReviewOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [reviewOpen]);
 
   const allDone = useMemo(
     () => conversions.filter((c) => c.status === "done"),
@@ -501,6 +575,15 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
             </button>
           ))}
           <button
+            className={`tab select-toggle ${selectMode ? "active" : ""}`}
+            type="button"
+            onClick={selectMode ? onExitSelectMode : onEnterSelectMode}
+            title={selectMode ? "Exit selection mode" : "Select emails as SOP sources"}
+          >
+            <IconChecklist size={15} />
+            {selectMode ? "Done selecting" : "Select emails"}
+          </button>
+          <button
             className="btn-primary btn-sm export-btn"
             type="button"
             disabled={allDone.length === 0 || busy}
@@ -519,6 +602,35 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
             <IconRefresh size={17} />
           </button>
         </div>
+
+        {selectMode && (
+          <div className="select-toolbar">
+            <label className="select-visible">
+              <input
+                ref={masterRef}
+                type="checkbox"
+                checked={allVisibleSelected}
+                disabled={visibleSelectableIds.length === 0}
+                onChange={(e) =>
+                  onSelectMany(visibleSelectableIds, e.target.checked)
+                }
+                aria-label={`Select the ${visibleSelectableIds.length} visible emails`}
+              />
+              Select visible ({visibleSelectableIds.length})
+            </label>
+            <button
+              className="btn-subtle btn-sm"
+              type="button"
+              disabled={visibleSelectedCount === 0}
+              onClick={() => onSelectMany(visibleSelectableIds, false)}
+            >
+              Clear visible
+            </button>
+            <span className="muted small select-hint">
+              Only emails on this screen — other pages are not affected.
+            </span>
+          </div>
+        )}
 
         {q.length >= 2 && contentIds === null && (
           <p className="empty small">Searching inside content…</p>
@@ -651,8 +763,36 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                             ql && !inMeta && cacheRef.current[c.id]
                               ? contentSnippet(cacheRef.current[c.id], q)
                               : null;
+                          const selectable =
+                            selectMode && c.status === "done";
+                          const isSelected = selectedIds.has(c.id);
                           return (
-                            <li key={c.id} className="row">
+                            <li
+                              key={c.id}
+                              className={`row ${selectable ? "selectable" : ""} ${
+                                selectMode && isSelected ? "selected" : ""
+                              }`}
+                              onClick={
+                                selectable ? () => onToggleId(c.id) : undefined
+                              }
+                            >
+                              {selectMode && (
+                                <input
+                                  type="checkbox"
+                                  className="row-check"
+                                  checked={isSelected}
+                                  disabled={c.status !== "done"}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={() => onToggleId(c.id)}
+                                  aria-label={`Select "${
+                                    c.subject || c.source_name
+                                  }"${
+                                    c.sender_name || c.sender_email
+                                      ? ` from ${c.sender_name || c.sender_email}`
+                                      : ""
+                                  }`}
+                                />
+                              )}
                               <span className={`chip ${c.status}`}>
                                 <span className="cdot" />
                                 {STATUS_LABEL[c.status]}
@@ -683,39 +823,44 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                                   </p>
                                 )}
                               </div>
-                              <div className="row-actions">
-                                {c.status === "done" && (
-                                  <>
-                                    <button
-                                      className="icon-btn"
-                                      type="button"
-                                      onClick={() => openPreview(c)}
-                                      title="Preview"
-                                      aria-label="Preview"
-                                    >
-                                      <IconEye size={17} />
-                                    </button>
-                                    <button
-                                      className="icon-btn"
-                                      type="button"
-                                      onClick={() => downloadOne(c)}
-                                      title="Download"
-                                      aria-label="Download"
-                                    >
-                                      <IconDownload size={17} />
-                                    </button>
-                                  </>
-                                )}
-                                <button
-                                  className="icon-btn danger"
-                                  type="button"
-                                  onClick={() => remove(c)}
-                                  title="Delete"
-                                  aria-label="Delete"
-                                >
-                                  <IconTrash size={17} />
-                                </button>
-                              </div>
+                              {/* In selection mode row actions are hidden so a
+                                  row click can never trigger preview/download/
+                                  delete by accident. */}
+                              {!selectMode && (
+                                <div className="row-actions">
+                                  {c.status === "done" && (
+                                    <>
+                                      <button
+                                        className="icon-btn"
+                                        type="button"
+                                        onClick={() => openPreview(c)}
+                                        title="Preview"
+                                        aria-label="Preview"
+                                      >
+                                        <IconEye size={17} />
+                                      </button>
+                                      <button
+                                        className="icon-btn"
+                                        type="button"
+                                        onClick={() => downloadOne(c)}
+                                        title="Download"
+                                        aria-label="Download"
+                                      >
+                                        <IconDownload size={17} />
+                                      </button>
+                                    </>
+                                  )}
+                                  <button
+                                    className="icon-btn danger"
+                                    type="button"
+                                    onClick={() => remove(c)}
+                                    title="Delete"
+                                    aria-label="Delete"
+                                  >
+                                    <IconTrash size={17} />
+                                  </button>
+                                </div>
+                              )}
                             </li>
                           );
                         })}
@@ -815,6 +960,68 @@ export function Library({ conversions, onChange, onToast, onGoConvert }: Props) 
                 ) : (
                   <pre className="preview">{previewMd}</pre>
                 )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Spacer so the fixed selection bar never covers the last rows. */}
+      {selectedIds.size > 0 && <div className="selbar-spacer" aria-hidden />}
+
+      <SelectionBar
+        count={selectedIds.size}
+        onReview={() => setReviewOpen(true)}
+        onClear={onClearSelection}
+        onExit={onExitSelectMode}
+        onCreateSop={onCreateSop}
+      />
+
+      {reviewOpen &&
+        createPortal(
+          <div className="overlay" onClick={() => setReviewOpen(false)}>
+            <div className="modal review-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>Selected emails ({selectedList.length})</h3>
+                <div className="modal-actions">
+                  <button
+                    className="icon-btn"
+                    type="button"
+                    onClick={() => setReviewOpen(false)}
+                    aria-label="Close"
+                  >
+                    <IconX size={17} />
+                  </button>
+                </div>
+              </div>
+              <div className="modal-body">
+                <ul className="rows review-rows">
+                  {selectedList.map((c) => (
+                    <li key={c.id} className="row">
+                      <div className="row-main">
+                        <div className="row-name">{c.subject || c.source_name}</div>
+                        <div className="row-meta">
+                          <span>
+                            {c.sender_name || c.sender_email || "Unknown sender"}
+                          </span>
+                          <span>{c.sent_at ? fmtDateTime(c.sent_at) : "—"}</span>
+                          <span>{c.source_name}</span>
+                        </div>
+                      </div>
+                      <div className="row-actions">
+                        <button
+                          className="icon-btn danger"
+                          type="button"
+                          onClick={() => onToggleId(c.id)}
+                          title="Remove from selection"
+                          aria-label={`Remove "${c.subject || c.source_name}" from selection`}
+                        >
+                          <IconX size={16} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>,

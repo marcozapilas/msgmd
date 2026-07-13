@@ -6,6 +6,7 @@ import { useToasts } from "./lib/useToasts.ts";
 import { Auth } from "./components/Auth.tsx";
 import { Uploader } from "./components/Uploader.tsx";
 import { Library } from "./components/Library.tsx";
+import { SopPrep } from "./components/SopPrep.tsx";
 import { ProfileModal } from "./components/ProfileModal.tsx";
 import { Toasts } from "./components/Toasts.tsx";
 import {
@@ -18,7 +19,7 @@ import {
 } from "./components/icons.tsx";
 import { useTheme } from "./lib/useTheme.ts";
 
-type View = "convert" | "library";
+type View = "convert" | "library" | "sop";
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -26,6 +27,11 @@ export function App() {
   const [conversions, setConversions] = useState<Conversion[]>([]);
   const [view, setView] = useState<View>("convert");
   const [profileOpen, setProfileOpen] = useState(false);
+  // Evidence selection lives here (not in Library) so it survives view
+  // switches (Library <-> SOP stub). In-memory only: cleared on sign-out and
+  // naturally on page refresh; never persisted to DB or localStorage.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { toasts, push, dismiss } = useToasts();
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -40,13 +46,49 @@ export function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Sign-out clears the selection and leaves selection mode.
+  useEffect(() => {
+    if (!session) {
+      setSelectedIds(new Set());
+      setSelectMode(false);
+      setView("convert");
+    }
+  }, [session]);
+
+  const toggleId = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectMany = useCallback((ids: string[], selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
   const refresh = useCallback(async () => {
     // Metadata only — never pull the (potentially huge) markdown column for the
     // whole library. Markdown is fetched on demand (preview/download/search).
     // Page through in 1000-row ranges so every row loads regardless of the
     // server's per-request cap.
     const cols =
-      "id,user_id,batch_id,source_name,subject,status,error,size_bytes,created_at,output_path,storage_path";
+      "id,user_id,batch_id,source_name,subject,status,error,size_bytes,created_at,output_path,storage_path,sender_name,sender_email,sent_at";
     const PAGE = 1000;
     const all: Conversion[] = [];
     for (let from = 0; ; from += PAGE) {
@@ -163,7 +205,7 @@ export function App() {
               onConverted={() => setView("library")}
             />
           </div>
-        ) : (
+        ) : view === "library" ? (
           <div className="view">
             <header className="view-head">
               <h1 className="view-title">Library</h1>
@@ -176,8 +218,21 @@ export function App() {
               onChange={refresh}
               onToast={push}
               onGoConvert={() => setView("convert")}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onEnterSelectMode={() => setSelectMode(true)}
+              onExitSelectMode={exitSelectMode}
+              onToggleId={toggleId}
+              onSelectMany={selectMany}
+              onClearSelection={clearSelection}
+              onCreateSop={() => setView("sop")}
             />
           </div>
+        ) : (
+          <SopPrep
+            sources={conversions.filter((c) => selectedIds.has(c.id))}
+            onBack={() => setView("library")}
+          />
         )}
       </main>
 

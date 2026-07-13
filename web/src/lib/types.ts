@@ -30,5 +30,6 @@ export interface Conversion {
   sender_name: string | null;
   sender_email: string | null;
   sent_at: string | null;
-  recipients: Recipients | null;
+  /** Not fetched by the list query (kept light); present on full-row reads. */
+  recipients?: Recipients | null;
 }

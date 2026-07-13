@@ -122,6 +122,17 @@ export const IconLogout = ({ size }: P) => (
   </svg>
 );
 
+export const IconChecklist = ({ size }: P) => (
+  <svg {...base(size)}>
+    <rect x="3" y="5" width="6" height="6" rx="1" />
+    <path d="m3.9 7.9 1.5 1.5 2.6-2.9" />
+    <path d="M13 7h8" />
+    <path d="M13 12h8" />
+    <path d="M13 17h8" />
+    <path d="M4 16.5h5" />
+  </svg>
+);
+
 export const IconSun = ({ size }: P) => (
   <svg {...base(size)}>
     <circle cx="12" cy="12" r="4" />
