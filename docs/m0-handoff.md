@@ -73,8 +73,18 @@ select id, source_name, recipients from public.conversions
 where recipients->>'ambiguous' = 'true';
 ```
 
-<!-- B3-ROWS: to be filled with the three rows + generated JSONB -->
-**Rows:** _pending — Script B / B3 result set to be appended verbatim._
+All three are undeliverable-report ("Teslim edilmez" / NDR) messages, whose
+To lines carry a bare comma-separated display-name list with no addresses at
+all — the one shape that cannot be split deterministically. The fallback
+behaved exactly as designed: names retained verbatim in a single entry, no
+email fabricated, `ambiguous: true` set. **These are documented safe fallback
+cases, not failures.**
+
+| id | source_name | to_line | resulting recipients JSONB |
+|---|---|---|---|
+| `cf6d9e02-10e8-497b-82ec-7a2e9067e86c` | Teslim edilmez_ RE_ Balance Confirmation – Homend UK Audit (Rhenus Logistics Ltd_).msg | `Ferdi Hilgers, Ipek Gurkan` | `{"cc":[],"to":[{"name":"Ferdi Hilgers, Ipek Gurkan","email":null}],"ambiguous":true}` |
+| `92481b48-db97-45e2-9df1-7dc5270c0b45` | Teslim edilmez_ RE_ Karaca UK-DEU Homend Products Sellout Hk_ (40).msg | `İsmail PİŞKİN, Hakan DURAN, Ayça Yağışan UTKU, Ömer Barbaros YİŞ` | `{"cc":[],"to":[{"name":"İsmail PİŞKİN, Hakan DURAN, Ayça Yağışan UTKU, Ömer Barbaros YİŞ","email":null}],"ambiguous":true}` |
+| `f46f2b58-fa4a-4004-8fd3-0faccc3361f5` | Teslim edilmez_ RE_ Karaca UK-DEU Homend Products Sellout Hk_.msg | `Hakan KOÇER, Harun KUTLUAY` | `{"cc":[],"to":[{"name":"Hakan KOÇER, Harun KUTLUAY","email":null}],"ambiguous":true}` |
 
 ### Legitimate NULL `sender_email` (1524 rows)
 
