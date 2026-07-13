@@ -61,7 +61,13 @@ export function parseMsgBytes(bytes: Uint8Array): ParsedEmail {
   const to: Address[] = [];
   const cc: Address[] = [];
   for (const r of recipients) {
-    const address: Address = { name: clean(r.name), email: clean(r.email) };
+    // Prefer the SMTP address over PidTagEmailAddress, which holds an X.500
+    // DN for internal Exchange recipients. Only affects newly converted
+    // files; historical markdown is immutable.
+    const address: Address = {
+      name: clean(r.name),
+      email: clean(r.smtpAddress) ?? clean(r.email),
+    };
     if (r.recipType === "cc") cc.push(address);
     else if (r.recipType === "bcc") continue;
     else to.push(address);

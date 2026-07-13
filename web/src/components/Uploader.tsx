@@ -37,6 +37,15 @@ const MAX_ATTEMPTS = 4;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Mirror of the M0 backfill address rules: an X.500 DN (or anything without
+// "@") is never persisted in an email field; the metadata payload therefore
+// can never contradict the generated markdown.
+const emailOrNull = (v?: string) => (v && v.includes("@") ? v : null);
+const toRecipient = (a: { name?: string; email?: string }) => ({
+  name: a.name ?? null,
+  email: emailOrNull(a.email),
+});
+
 // Lazy-load the (heavy) converter only when the first file is processed.
 type Converter = typeof import("../lib/converter.ts");
 let converterPromise: Promise<Converter> | null = null;
@@ -135,10 +144,24 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         let subject: string;
         let markdown: string;
+        let senderName: string | null;
+        let senderEmail: string | null;
+        let sentAt: string | null;
+        let recipients: {
+          to: ReturnType<typeof toRecipient>[];
+          cc: ReturnType<typeof toRecipient>[];
+        };
         try {
           const out = convertMsgToMarkdown(bytes);
           subject = out.email.subject;
           markdown = out.markdown;
+          senderName = out.email.from.name ?? null;
+          senderEmail = emailOrNull(out.email.from.email);
+          sentAt = out.email.date || null;
+          recipients = {
+            to: out.email.to.map(toRecipient),
+            cc: out.email.cc.map(toRecipient),
+          };
         } catch (e) {
           throw new Error(
             e instanceof Error ? e.message : "Could not read .msg file",
@@ -162,6 +185,10 @@ export function Uploader({ userId, onDone, onToast, onConverted }: Props) {
                 status: "done",
                 subject,
                 markdown,
+                sender_name: senderName,
+                sender_email: senderEmail,
+                sent_at: sentAt,
+                recipients,
               },
               { onConflict: "id" },
             ),
