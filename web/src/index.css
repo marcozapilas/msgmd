@@ -1620,6 +1620,31 @@ input[type="checkbox"]:disabled {
 .review-modal {
   max-width: 640px;
 }
+
+/* M1.1 — selected-vs-resolved states */
+.resolve-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 4px 2px;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+.resolve-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 13px;
+  border-radius: var(--r-sm);
+  background: var(--err-soft);
+  color: var(--err);
+  font-size: var(--fs-small);
+}
+.resolve-error button {
+  flex: none;
+}
 .review-rows .row {
   padding: 10px 4px;
 }

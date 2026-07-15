@@ -31,12 +31,16 @@ interface Props {
   // Evidence selection (state owned by App so it survives view switches)
   selectMode: boolean;
   selectedIds: Set<string>;
+  loadState: "idle" | "loading" | "complete" | "error";
   onEnterSelectMode: () => void;
   onExitSelectMode: () => void;
   onToggleId: (id: string) => void;
   onSelectMany: (ids: string[], selected: boolean) => void;
   onClearSelection: () => void;
   onCreateSop: () => void;
+  /** Called with IDs confirmed deleted so App can prune the selection now. */
+  onDeleted: (ids: string[]) => void;
+  onRetryLoad: () => void;
 }
 
 type Filter = "all" | "done" | "pending" | "error";
@@ -175,12 +179,15 @@ export function Library({
   onGoConvert,
   selectMode,
   selectedIds,
+  loadState,
   onEnterSelectMode,
   onExitSelectMode,
   onToggleId,
   onSelectMany,
   onClearSelection,
   onCreateSop,
+  onDeleted,
+  onRetryLoad,
 }: Props) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -459,26 +466,57 @@ export function Library({
   }
 
   async function remove(c: Conversion) {
-    const { error } = await supabase.from("conversions").delete().eq("id", c.id);
+    // .select("id") returns the rows actually deleted — under RLS a
+    // no-error response alone does not prove the row was removed.
+    const { data, error } = await supabase
+      .from("conversions")
+      .delete()
+      .eq("id", c.id)
+      .select("id");
     if (error) return onToast("err", "Delete failed: " + error.message);
-    if (preview?.id === c.id) setPreview(null);
+    const deletedIds = (data ?? []).map((r) => r.id as string);
+    onDeleted(deletedIds); // prune only server-confirmed deletions
+    if (deletedIds.length === 0) {
+      onToast("err", "This record could not be deleted.");
+    } else if (preview?.id === c.id) {
+      setPreview(null);
+    }
     await onChange();
   }
 
   async function deleteBatch(g: Group) {
+    // Defense in depth: the button is not rendered in selection mode, and the
+    // handler refuses to run there even if invoked programmatically.
+    if (selectMode) return;
     await withBusy(async () => {
       const ids = g.items.map((c) => c.id);
+      // Only IDs the server RETURNS as deleted count — under RLS a no-error
+      // response does not prove every requested row was removed.
+      const deleted: string[] = [];
+      let failed = false;
       for (let i = 0; i < ids.length; i += 100) {
-        const { error } = await supabase
+        const chunk = ids.slice(i, i + 100);
+        const { data, error } = await supabase
           .from("conversions")
           .delete()
-          .in("id", ids.slice(i, i + 100));
+          .in("id", chunk)
+          .select("id");
         if (error) {
+          failed = true;
           onToast("err", "Delete failed: " + error.message);
           break;
         }
+        deleted.push(...(data ?? []).map((r) => r.id as string));
       }
-      onToast("ok", "Batch deleted");
+      onDeleted(deleted); // unreturned IDs are never pruned from selection
+      if (!failed) {
+        if (deleted.length === ids.length) onToast("ok", "Batch deleted");
+        else
+          onToast(
+            "err",
+            `Some records could not be deleted (${deleted.length} of ${ids.length} removed).`,
+          );
+      }
       await onChange();
     });
   }
@@ -711,16 +749,22 @@ export function Library({
                       >
                         <IconMerge size={16} />
                       </button>
-                      <button
-                        className="icon-btn danger"
-                        type="button"
-                        disabled={busy}
-                        title="Delete batch"
-                        aria-label="Delete batch"
-                        onClick={() => deleteBatch(group)}
-                      >
-                        <IconTrash size={16} />
-                      </button>
+                      {/* Absent from the DOM in selection mode (and the
+                          handler is guarded) so it cannot be reached by
+                          mouse, keyboard, focus, or programmatic UI action.
+                          ZIP and merge above stay available by design. */}
+                      {!selectMode && (
+                        <button
+                          className="icon-btn danger"
+                          type="button"
+                          disabled={busy}
+                          title="Delete batch"
+                          aria-label="Delete batch"
+                          onClick={() => deleteBatch(group)}
+                        >
+                          <IconTrash size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -982,7 +1026,13 @@ export function Library({
           <div className="overlay" onClick={() => setReviewOpen(false)}>
             <div className="modal review-modal" onClick={(e) => e.stopPropagation()}>
               <div className="modal-head">
-                <h3>Selected emails ({selectedList.length})</h3>
+                {/* No final count while some selected sources are unresolved */}
+                <h3>
+                  Selected emails
+                  {selectedList.length === selectedIds.size
+                    ? ` (${selectedList.length})`
+                    : ""}
+                </h3>
                 <div className="modal-actions">
                   <button
                     className="icon-btn"
@@ -1022,6 +1072,27 @@ export function Library({
                     </li>
                   ))}
                 </ul>
+                {selectedList.length < selectedIds.size &&
+                  (loadState === "error" ? (
+                    <div className="resolve-error" role="alert">
+                      Some selected sources could not be resolved because the
+                      Library did not finish loading. Nothing was removed from
+                      your selection.
+                      <button
+                        className="btn-subtle btn-sm"
+                        type="button"
+                        onClick={onRetryLoad}
+                      >
+                        <IconRefresh size={14} /> Retry Library load
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="resolve-note" role="status" aria-live="polite">
+                      <IconSpinner size={15} />
+                      Resolving selected sources… ({selectedList.length} of{" "}
+                      {selectedIds.size} loaded)
+                    </div>
+                  ))}
               </div>
             </div>
           </div>,

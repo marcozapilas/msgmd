@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase.ts";
 import type { Conversion } from "./lib/types.ts";
@@ -21,6 +21,10 @@ import { useTheme } from "./lib/useTheme.ts";
 
 type View = "convert" | "library" | "sop";
 
+/** Explicit Library load lifecycle (M1.1). Selection pruning is allowed only
+ * in the transition to "complete"; "error"/"loading" must never prune. */
+export type LibraryLoadState = "idle" | "loading" | "complete" | "error";
+
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
@@ -32,6 +36,10 @@ export function App() {
   // naturally on page refresh; never persisted to DB or localStorage.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [loadState, setLoadState] = useState<LibraryLoadState>("idle");
+  // Run-id guard: only the newest refresh may write conversions/loadState,
+  // so a stale in-flight refresh can never overwrite the latest state.
+  const refreshRun = useRef(0);
   const { toasts, push, dismiss } = useToasts();
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -52,8 +60,37 @@ export function App() {
       setSelectedIds(new Set());
       setSelectMode(false);
       setView("convert");
+      setLoadState("idle");
+      refreshRun.current += 1; // invalidate any in-flight refresh
     }
   }, [session]);
+
+  /** Intersect the selection with the FULL successfully loaded dataset.
+   * Called only on the transition to "complete" — never on partial pages,
+   * errors, or any filter/pagination event. */
+  const reconcileSelectedIds = useCallback((loaded: Conversion[]) => {
+    const loadedIds = new Set(loaded.map((c) => c.id));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (loadedIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
+  /** Immediately drop only IDs confirmed deleted by a successful delete. */
+  const removeFromSelection = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of ids) if (next.delete(id)) changed = true;
+      return changed ? next : prev;
+    });
+  }, []);
 
   const toggleId = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -87,6 +124,8 @@ export function App() {
     // whole library. Markdown is fetched on demand (preview/download/search).
     // Page through in 1000-row ranges so every row loads regardless of the
     // server's per-request cap.
+    const run = ++refreshRun.current;
+    setLoadState("loading");
     const cols =
       "id,user_id,batch_id,source_name,subject,status,error,size_bytes,created_at,output_path,storage_path,sender_name,sender_email,sent_at";
     const PAGE = 1000;
@@ -97,14 +136,23 @@ export function App() {
         .select(cols)
         .order("created_at", { ascending: false })
         .range(from, from + PAGE - 1);
-      if (error || !data) break;
+      if (run !== refreshRun.current) return; // stale run: a newer refresh owns state
+      if (error || !data) {
+        // Partial/failed load: keep whatever rendered, NEVER prune selection.
+        setLoadState("error");
+        return;
+      }
       all.push(...(data as Conversion[]));
       // Progressive render: show each page as it arrives so the first 1000 rows
       // appear almost immediately instead of waiting for the whole library.
       setConversions([...all]);
       if (data.length < PAGE) break;
     }
-  }, []);
+    if (run !== refreshRun.current) return;
+    // Full successful load only: now the dataset is authoritative.
+    reconcileSelectedIds(all);
+    setLoadState("complete");
+  }, [reconcileSelectedIds]);
 
   useEffect(() => {
     if (session) void refresh();
@@ -220,17 +268,23 @@ export function App() {
               onGoConvert={() => setView("convert")}
               selectMode={selectMode}
               selectedIds={selectedIds}
+              loadState={loadState}
               onEnterSelectMode={() => setSelectMode(true)}
               onExitSelectMode={exitSelectMode}
               onToggleId={toggleId}
               onSelectMany={selectMany}
               onClearSelection={clearSelection}
               onCreateSop={() => setView("sop")}
+              onDeleted={removeFromSelection}
+              onRetryLoad={() => void refresh()}
             />
           </div>
         ) : (
           <SopPrep
             sources={conversions.filter((c) => selectedIds.has(c.id))}
+            selectedCount={selectedIds.size}
+            loadState={loadState}
+            onRetry={() => void refresh()}
             onBack={() => setView("library")}
           />
         )}
