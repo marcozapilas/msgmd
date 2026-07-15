@@ -897,6 +897,14 @@ input:focus {
   color: var(--ink-2);
   margin-top: 4px;
 }
+.stat-progress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  font-size: var(--fs-micro);
+  color: var(--ink-3);
+}
 
 .search {
   position: relative;

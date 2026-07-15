@@ -37,6 +37,10 @@ export function App() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loadState, setLoadState] = useState<LibraryLoadState>("idle");
+  // Authoritative Library total: every conversions row visible to this user
+  // under RLS (all statuses). null = not yet known. Kept during refreshes;
+  // a failed count silently retains the last successful value.
+  const [libraryTotal, setLibraryTotal] = useState<number | null>(null);
   // Run-id guard: only the newest refresh may write conversions/loadState,
   // so a stale in-flight refresh can never overwrite the latest state.
   const refreshRun = useRef(0);
@@ -61,6 +65,7 @@ export function App() {
       setSelectMode(false);
       setView("convert");
       setLoadState("idle");
+      setLibraryTotal(null);
       refreshRun.current += 1; // invalidate any in-flight refresh
     }
   }, [session]);
@@ -126,6 +131,16 @@ export function App() {
     // server's per-request cap.
     const run = ++refreshRun.current;
     setLoadState("loading");
+    // Authoritative total, requested in PARALLEL with row pagination via the
+    // same RLS-authenticated client. head:true transfers no rows. Only the
+    // newest run may write it; on error the last successful total is kept.
+    void supabase
+      .from("conversions")
+      .select("*", { count: "exact", head: true })
+      .then(({ count, error }) => {
+        if (run !== refreshRun.current) return;
+        if (!error && typeof count === "number") setLibraryTotal(count);
+      });
     const cols =
       "id,user_id,batch_id,source_name,subject,status,error,size_bytes,created_at,output_path,storage_path,sender_name,sender_email,sent_at";
     const PAGE = 1000;
@@ -210,8 +225,8 @@ export function App() {
           >
             <IconLayers size={19} />
             <span>Library</span>
-            {conversions.length > 0 && (
-              <span className="rail-badge">{conversions.length}</span>
+            {libraryTotal !== null && libraryTotal > 0 && (
+              <span className="rail-badge">{libraryTotal}</span>
             )}
           </button>
         </nav>
@@ -269,6 +284,8 @@ export function App() {
               selectMode={selectMode}
               selectedIds={selectedIds}
               loadState={loadState}
+              libraryTotal={libraryTotal}
+              loadedCount={conversions.length}
               onEnterSelectMode={() => setSelectMode(true)}
               onExitSelectMode={exitSelectMode}
               onToggleId={toggleId}
@@ -293,7 +310,7 @@ export function App() {
       {profileOpen && (
         <ProfileModal
           user={user}
-          totalConversions={conversions.length}
+          totalConversions={libraryTotal ?? conversions.length}
           onClose={() => setProfileOpen(false)}
           onToast={push}
         />

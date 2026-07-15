@@ -32,6 +32,10 @@ interface Props {
   selectMode: boolean;
   selectedIds: Set<string>;
   loadState: "idle" | "loading" | "complete" | "error";
+  /** Authoritative RLS-visible total (all statuses); null = not yet known. */
+  libraryTotal: number | null;
+  /** Rows loaded so far (conversions.length) — never the primary total. */
+  loadedCount: number;
   onEnterSelectMode: () => void;
   onExitSelectMode: () => void;
   onToggleId: (id: string) => void;
@@ -180,6 +184,8 @@ export function Library({
   selectMode,
   selectedIds,
   loadState,
+  libraryTotal,
+  loadedCount,
   onEnterSelectMode,
   onExitSelectMode,
   onToggleId,
@@ -291,7 +297,7 @@ export function Library({
       if (c.status === "done") done += 1;
       if (new Date(c.created_at).getTime() >= weekAgo) week += 1;
     }
-    return { total: conversions.length, week, done };
+    return { week, done };
   }, [conversions]);
 
   const counts = useMemo(() => {
@@ -521,26 +527,9 @@ export function Library({
     });
   }
 
-  if (conversions.length === 0) {
-    return (
-      <section className="card pad">
-        <div className="empty">
-          <div className="e-ic">
-            <IconInbox size={24} />
-          </div>
-          <p>Your library is empty.</p>
-          <p className="small muted">Convert your first .msg to see it here.</p>
-          <button
-            className="btn-primary"
-            style={{ marginTop: 14 }}
-            onClick={onGoConvert}
-          >
-            <IconUpload size={16} /> Convert files
-          </button>
-        </div>
-      </section>
-    );
-  }
+  // Zero-row states render INSIDE the content area below the always-visible
+  // header/stat cards, so the authoritative Total emails count stays on
+  // screen even before the first page of rows arrives (see main return).
 
   const filters: { key: Filter; label: string; n: number }[] = [
     { key: "all", label: "All", n: counts.all },
@@ -557,8 +546,27 @@ export function Library({
             <IconLayers size={18} />
           </span>
           <div>
-            <div className="stat-num">{stats.total}</div>
-            <div className="stat-lbl">Total conversions</div>
+            {/* Primary total comes ONLY from the authoritative RLS count —
+                never from the progressively loaded subset. */}
+            <div className="stat-num">
+              {libraryTotal !== null ? libraryTotal.toLocaleString("en-GB") : "—"}
+            </div>
+            <div className="stat-lbl">Total emails</div>
+            {loadState === "loading" &&
+              libraryTotal !== null &&
+              loadedCount < libraryTotal && (
+                <div className="stat-progress" role="status" aria-live="polite">
+                  <IconSpinner size={12} />
+                  Loading {loadedCount.toLocaleString("en-GB")} of{" "}
+                  {libraryTotal.toLocaleString("en-GB")}…
+                </div>
+              )}
+            {loadState === "loading" && libraryTotal === null && (
+              <div className="stat-progress" role="status" aria-live="polite">
+                <IconSpinner size={12} />
+                Loading…
+              </div>
+            )}
           </div>
         </div>
         <div className="stat-card">
@@ -582,6 +590,62 @@ export function Library({
       </div>
 
       <section className="card pad">
+        {conversions.length === 0 ? (
+          loadState === "complete" && libraryTotal === 0 ? (
+            // Only a COMPLETED load with an authoritative zero may claim empty.
+            <div className="empty">
+              <div className="e-ic">
+                <IconInbox size={24} />
+              </div>
+              <p>Your library is empty.</p>
+              <p className="small muted">
+                Convert your first .msg to see it here.
+              </p>
+              <button
+                className="btn-primary"
+                style={{ marginTop: 14 }}
+                onClick={onGoConvert}
+              >
+                <IconUpload size={16} /> Convert files
+              </button>
+            </div>
+          ) : loadState === "error" ? (
+            <div className="resolve-error" role="alert">
+              The Library did not finish loading.
+              <button
+                className="btn-subtle btn-sm"
+                type="button"
+                onClick={onRetryLoad}
+              >
+                <IconRefresh size={14} /> Retry Library load
+              </button>
+            </div>
+          ) : loadState === "complete" ? (
+            // Defensive: load completed with zero rows while the
+            // authoritative total is non-zero — a reconciliation mismatch,
+            // not a loading failure, so the copy must not claim one.
+            <div className="resolve-error" role="alert">
+              The Library could not be reconciled with its current total.
+              <button
+                className="btn-subtle btn-sm"
+                type="button"
+                onClick={onRetryLoad}
+              >
+                <IconRefresh size={14} /> Retry Library load
+              </button>
+            </div>
+          ) : (
+            <div className="empty">
+              <div className="e-ic">
+                <IconSpinner size={22} />
+              </div>
+              <p role="status" aria-live="polite">
+                Loading your library…
+              </p>
+            </div>
+          )
+        ) : (
+          <>
         <div className="search big">
           <IconSearch size={18} />
           <input
@@ -938,6 +1002,8 @@ export function Library({
               );
             })}
           </div>
+        )}
+          </>
         )}
       </section>
 
